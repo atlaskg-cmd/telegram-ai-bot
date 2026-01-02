@@ -10,8 +10,8 @@
   "retry_attempts": 3,
   "language": "ru",
   "fallback_on_error": true,
-  "weather_api_key": "56324f46965179de16b1e12011f953d4",
-  "openrouter_api_key": "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",
+  "weather_api_key": "YOUR_OPENWEATHERMAP_API_KEY",
+  "openrouter_api_key": "YOUR_OPENROUTER_API_KEY",
   "currency_api_url": "https://api.exchangerate-api.com/v4/latest/USD",
   "rss_url": "https://kaktus.media/?rss"
 }
