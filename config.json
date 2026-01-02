@@ -1,0 +1,13 @@
+{
+  "models": [
+    "xiaomi/mimo-v2-flash:free",
+    "microsoft/wizardlm-2-8x22b",
+    "anthropic/claude-3-haiku:beta"
+  ],
+  "default_model": "xiaomi/mimo-v2-flash:free",
+  "max_tokens_base": 100,
+  "max_tokens_scale_factor": 0.5,
+  "retry_attempts": 3,
+  "language": "ru",
+  "fallback_on_error": true
+}
