@@ -26,19 +26,22 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
+# Dictionary to store conversation history for each user
+user_histories = {}
+
 # Function to query OpenRouter API
-def query_deepseek(prompt):
+def query_deepseek(messages):
     if not OPENROUTER_API_KEY:
         return "OPENROUTER_API_KEY не установлен. Установите переменную окружения OPENROUTER_API_KEY."
-    logging.info(f"Отправка запроса к OpenRouter API: {prompt}")
+    logging.info(f"Отправка запроса к OpenRouter API с историей: {messages}")
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
     data = {
         "model": config.get("default_model", "xiaomi/mimo-v2-flash:free"),
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 100
+        "messages": messages,
+        "max_tokens": 1000
     }
     try:
         response = requests.post(OPENROUTER_API_URL, headers=headers, json=data)
@@ -156,7 +159,7 @@ async def send_welcome(message: types.Message):
         "/weather_ton - Погода в Тоне\n"
         "/currency - Курс валют\n"
         "/news_kyrgyzstan - Новости Киргизстана за последние 3 дня\n"
-        "/ask <вопрос> - Задать вопрос ИИ\n"
+        "Просто напишите свой вопрос, и я отвечу!\n"
     )
     await message.reply(menu)
 
@@ -209,17 +212,29 @@ async def news_kyrgyzstan(message: types.Message):
     response = get_news_kyrgyzstan()
     await message.reply(response)
 
-# Handler for AI queries via /ask
-async def ask_ai(message: types.Message):
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.reply("Пожалуйста, укажите вопрос после /ask, например: /ask Что такое Python?")
-        return
-    user_input = parts[1]
-    logging.info(f"Получена команда /ask от пользователя {message.from_user.id}: {user_input}")
+# Handler for text messages (questions)
+async def handle_text(message: types.Message):
+    user_id = message.from_user.id
+    user_input = message.text
+    logging.info(f"Получен текст от пользователя {user_id}: {user_input}")
+
+    # Initialize history if not exists
+    if user_id not in user_histories:
+        user_histories[user_id] = []
+
+    # Add user message to history
+    user_histories[user_id].append({"role": "user", "content": user_input})
+
+    # Limit history to last 20 messages to avoid exceeding limits
+    if len(user_histories[user_id]) > 20:
+        user_histories[user_id] = user_histories[user_id][-20:]
+
     await message.reply("Обрабатываю ваш вопрос...")
-    response = query_deepseek(user_input)
+    response = query_deepseek(user_histories[user_id])
     await message.reply(response)
+
+    # Add assistant response to history
+    user_histories[user_id].append({"role": "assistant", "content": response})
 
 async def main():
     dp.message.register(send_welcome, Command(commands=['start']))
@@ -230,7 +245,7 @@ async def main():
     dp.message.register(weather_ton, Command(commands=['weather_ton']))
     dp.message.register(currency, Command(commands=['currency']))
     dp.message.register(news_kyrgyzstan, Command(commands=['news_kyrgyzstan']))
-    dp.message.register(ask_ai, Command(commands=['ask']))
+    dp.message.register(handle_text)
     logging.info("Бот запущен и готов к обработке сообщений.")
     await dp.start_polling(bot)
 
