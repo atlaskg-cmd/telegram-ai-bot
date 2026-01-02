@@ -9,5 +9,7 @@
   "max_tokens_scale_factor": 0.5,
   "retry_attempts": 3,
   "language": "ru",
-  "fallback_on_error": true
+  "fallback_on_error": true,
+  "weather_api_key": "YOUR_OPENWEATHERMAP_API_KEY",
+  "currency_api_url": "https://api.exchangerate-api.com/v4/latest/USD"
 }
