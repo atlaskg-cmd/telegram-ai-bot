@@ -78,6 +78,16 @@ contacts = {
 }
 
 
+def search_contacts(query):
+    """Search contacts by name or phone number."""
+    query = query.lower().strip()
+    results = []
+    for name, phone in contacts.items():
+        if query in name.lower() or query in phone.lower():
+            results.append((name, phone))
+    return results
+
+
 async def show_all_contacts(message: types.Message):
     user_id = message.from_user.id
     if not contacts:
