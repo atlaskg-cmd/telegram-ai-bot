@@ -4,7 +4,7 @@
     "microsoft/wizardlm-2-8x22b",
     "anthropic/claude-3-haiku:beta"
   ],
-  "default_model": "xiaomi/mimo-v2-flash:free",
+  "default_model": "arcee-ai/trinity-large-preview:free",
   "max_tokens_base": 100,
   "max_tokens_scale_factor": 0.5,
   "retry_attempts": 3,
@@ -13,5 +13,6 @@
   "weather_api_key": "YOUR_OPENWEATHERMAP_API_KEY",
   "openrouter_api_key": "YOUR_OPENROUTER_API_KEY",
   "currency_api_url": "https://api.exchangerate-api.com/v4/latest/USD",
-  "rss_url": "https://kaktus.media/?rss"
+  "rss_url": "https://kaktus.media/?rss",
+  "kinopoisk_api_key": "YOUR_KINOPOISK_API_KEY"
 }

@@ -1,24 +1,44 @@
 import logging
 import os
 import json
+import tempfile
+import re
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message
+from aiogram.types import Message, BufferedInputFile, FSInputFile, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 import asyncio
 import requests
 from datetime import datetime, timedelta, timezone
 import xml.etree.ElementTree as ET
+try:
+    from gtts import gTTS
+    import io
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+
+# Function to clean text for TTS
+def clean_text_for_tts(text):
+    # Remove emojis and special characters, keep only letters, numbers, and spaces
+    text = re.sub(r'[^\w\s]', '', text)
+    return text
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 
-# Load config
-with open('config.json', 'r') as f:
-    config = json.load(f)
+# Load config (safe)
+config = {}
+try:
+    with open('config.json', 'r', encoding='utf-8') as f:
+        config = json.load(f)
+except FileNotFoundError:
+    logging.warning('config.json not found, using defaults and environment variables.')
+except json.JSONDecodeError as e:
+    logging.error(f'Invalid config.json: {e}. Using defaults and environment variables.')
 
 # Initialize bot and dispatcher
 API_TOKEN = os.environ.get("TELEGRAM_API_TOKEN", "7968782605:AAEyELGMhUCMwzHH7FglYs9oL4Hi0Ew7CkQ")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", config.get("openrouter_api_key"))
+OPENROUTER_API_KEY = "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"
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", config.get("weather_api_key", "YOUR_OPENWEATHERMAP_API_KEY"))
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -26,11 +46,94 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Dictionary to store conversation history for each user
+# Dictionary to store conversation history and settings for each user
 user_histories = {}
 
-# Function to query OpenRouter API
-def query_deepseek(messages):
+# Warn if OpenRouter key missing
+if not OPENROUTER_API_KEY:
+    logging.warning('OPENROUTER_API_KEY is not set. OpenRouter requests will fail.')
+
+# Main reply keyboard shown under the input field
+main_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text='Погода Бишкек'), KeyboardButton(text='Погода Москва')],
+        [KeyboardButton(text='Погода Иссык-Куль'), KeyboardButton(text='Погода Боконбаево'), KeyboardButton(text='Погода Тон')],
+        [KeyboardButton(text='Курс валют'), KeyboardButton(text='Новости'), KeyboardButton(text='Контакты')],
+        [KeyboardButton(text='Переключить голос'), KeyboardButton(text='Голосовой ответ')]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=False
+)
+
+# Simple contacts storage (edit this dict to add contacts)
+# Пример контактов — отредактируйте или добавьте свои записи
+contacts = {
+    "Иван Иванов": "+996700000001",
+    "Мария Петрова": "+996700000002",
+    "Алексей Смирнов": "+996700000003",
+    "Ольга Смирнова": "+996700000004",
+    "Сергей Кузнецов": "+996700000005",
+    "Бабушка Ада": "+996700000006",
+    "Дедушка Илья": "+996700000007",
+}
+
+
+async def show_all_contacts(message: types.Message):
+    user_id = message.from_user.id
+    if not contacts:
+        await message.reply('Список контактов пуст. Добавьте контакты в `contacts` в коде.')
+        return
+    rows = []
+    mapping = {}
+    for i, name in enumerate(contacts.keys()):
+        key = f'c{i}'
+        mapping[key] = name
+        rows.append([InlineKeyboardButton(text=name, callback_data=f'contact:{key}')])
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
+    if user_id not in user_histories:
+        user_histories[user_id] = {'history': [], 'voice_mode': False}
+    user_histories[user_id]['last_contacts_map'] = mapping
+    await message.reply('Выберите контакт:', reply_markup=kb)
+
+
+async def contact_callback_handler(callback: types.CallbackQuery):
+    data = callback.data or ''
+    user_id = callback.from_user.id
+    await callback.answer()
+    if not is_authenticated(user_id):
+        await callback.message.reply('Доступ закрыт. Пожалуйста, авторизуйтесь через /start.')
+        return
+    if not data.startswith('contact:'):
+        return
+    key = data.split(':', 1)[1]
+    if key == 'back':
+        await show_all_contacts(callback.message)
+        return
+    mapping = user_histories.get(user_id, {}).get('last_contacts_map', {})
+    name = mapping.get(key)
+    if not name:
+        await callback.message.reply('Контакт не найден (возможно, истекла сессия).')
+        return
+    phone = contacts.get(name, 'Номер не задан')
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Вернуться', callback_data='contact:back')]])
+    await callback.message.reply(f"{name}: {phone}", reply_markup=back_kb)
+
+# Password protection
+AUTH_PASSWORD = "1916"
+authenticated_users = set()
+
+def is_authenticated(user_id: int) -> bool:
+    return user_id in authenticated_users
+
+async def ensure_auth(message: types.Message) -> bool:
+    user_id = message.from_user.id
+    if is_authenticated(user_id):
+        return True
+    await message.reply('Доступ закрыт. Отправьте /start и введите пароль.')
+    return False
+
+# Function to query OpenRouter API (sync)
+def query_deepseek_sync(messages):
     if not OPENROUTER_API_KEY:
         return "OPENROUTER_API_KEY не установлен. Установите переменную окружения OPENROUTER_API_KEY."
     logging.info(f"Отправка запроса к OpenRouter API с историей: {messages}")
@@ -39,20 +142,56 @@ def query_deepseek(messages):
         "Content-Type": "application/json"
     }
     data = {
-        "model": config.get("default_model", "xiaomi/mimo-v2-flash:free"),
+        "model": config.get("default_model", "google/gemini-2.5-flash-lite"),
         "messages": messages,
         "max_tokens": 1000
     }
     try:
         response = requests.post(OPENROUTER_API_URL, headers=headers, json=data)
-        logging.info(f"Ответ от OpenRouter API: {response.status_code} {response.text}")
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            return f"Ошибка: {response.status_code} {response.text}"
-    except Exception as e:
+        if response.status_code == 401:
+            logging.error("Ошибка 401: Неверный токен авторизации для OpenRouter API.")
+            return "Ошибка 401: Неверный токен авторизации. Проверьте OPENROUTER_API_KEY."
+        if response.status_code == 400:
+            logging.error(f"Ошибка 400: {response.text}")
+            return f"Ошибка 400: Неверный запрос. Проверьте модель и параметры."
+        response.raise_for_status()
+        result = response.json()
+        # Extract the message content from the response
+        if "choices" in result and len(result["choices"]) > 0:
+            return result["choices"][0]["message"]["content"]
+        return "Ошибка: пустой ответ от API."
+    except requests.exceptions.RequestException as e:
         logging.error(f"Ошибка при запросе к OpenRouter API: {e}")
-        return "Ошибка при подключении к OpenRouter API. Попробуйте позже."
+        return f"Ошибка при запросе: {e}"
+
+# Async wrapper for query_deepseek
+async def query_deepseek(messages):
+    return await asyncio.to_thread(query_deepseek_sync, messages)
+
+# Sync function to generate voice
+def generate_voice_sync(text, lang='ru'):
+    if not TTS_AVAILABLE:
+        return None
+    text = clean_text_for_tts(text)
+    try:
+        tts = gTTS(text, lang=lang)
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+            tts.save(temp_file.name)
+            logging.info("Голос сгенерирован успешно")
+            return temp_file.name
+    except Exception as e:
+        logging.error(f"Ошибка при генерации голоса: {e}")
+        # Clean up temp file if it was created
+        try:
+            if 'temp_file' in locals() and os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
+        except Exception:
+            pass
+        return None
+
+# Async wrapper for generate_voice
+async def generate_voice(text, lang='ru'):
+    return await asyncio.to_thread(generate_voice_sync, text, lang)
 
 # Function to get weather
 def get_weather(city):
@@ -75,17 +214,17 @@ def get_weather(city):
             weather_data = weather_response.json()
             temp = weather_data['current_weather']['temperature']
             weathercode = weather_data['current_weather']['weathercode']
-            # Decode weathercode to description
+            # Decode weathercode to description with emojis
             descriptions = {
-                0: "ясно", 1: "преимущественно ясно", 2: "переменная облачность", 3: "пасмурно",
-                45: "туман", 48: "изморось", 51: "мелкий дождь", 53: "дождь", 55: "сильный дождь",
-                56: "ледяной дождь", 57: "сильный ледяной дождь", 61: "небольшой дождь", 63: "дождь", 65: "сильный дождь",
-                66: "ледяной дождь", 67: "сильный ледяной дождь", 71: "небольшой снег", 73: "снег", 75: "сильный снег",
-                77: "снежные зерна", 80: "небольшой дождь", 81: "дождь", 82: "сильный дождь",
-                85: "небольшой снег", 86: "сильный снег", 95: "гроза", 96: "гроза с градом", 99: "сильная гроза с градом"
+                0: "☀️ ясно", 1: "🌤️ преимущественно ясно", 2: "⛅ переменная облачность", 3: "☁️ пасмурно",
+                45: "🌫️ туман", 48: "🌧️ изморось", 51: "🌦️ мелкий дождь", 53: "🌧️ дождь", 55: "🌧️ сильный дождь",
+                56: "🧊 ледяной дождь", 57: "🧊 сильный ледяной дождь", 61: "🌦️ небольшой дождь", 63: "🌧️ дождь", 65: "🌧️ сильный дождь",
+                66: "🧊 ледяной дождь", 67: "🧊 сильный ледяной дождь", 71: "❄️ небольшой снег", 73: "❄️ снег", 75: "❄️ сильный снег",
+                77: "🌨️ снежные зерна", 80: "🌦️ небольшой дождь", 81: "🌧️ дождь", 82: "🌧️ сильный дождь",
+                85: "❄️ небольшой снег", 86: "❄️ сильный снег", 95: "⛈️ гроза", 96: "⛈️ гроза с градом", 99: "⛈️ сильная гроза с градом"
             }
-            description = descriptions.get(weathercode, "неизвестно")
-            return f"Погода в {city}: {temp}°C, {description}"
+            description = descriptions.get(weathercode, "❓ неизвестно")
+            return f"🌤️ Погода в {city}: {temp}°C, {description}"
         else:
             return "Не удалось получить данные о погоде."
     except Exception as e:
@@ -101,7 +240,7 @@ def get_currency():
             data = response.json()
             usd_to_kgs = data['rates']['KGS']
             usd_to_rub = data['rates']['RUB']
-            return f"Курс USD: KGS {usd_to_kgs:.2f}, RUB {usd_to_rub:.2f}"
+            return f"💰 Курс USD: KGS {usd_to_kgs:.2f}, RUB {usd_to_rub:.2f}"
         else:
             return "Не удалось получить данные о валюте."
     except Exception as e:
@@ -134,14 +273,14 @@ def get_news_kyrgyzstan():
                         title = title_elem.text if title_elem is not None else 'Без заголовка'
                         link_elem = item.find('link')
                         url = link_elem.text if link_elem is not None else ''
-                        recent_news.append(f"{title}\n{url}")
+                        recent_news.append(f"📰 {title}\n🔗 {url}")
                 except ValueError:
                     continue  # Skip if date parsing fails
             if len(recent_news) >= 5:
                 break
         if not recent_news:
-            return "Нет новостей за последние 3 дня."
-        return "\n\n".join(recent_news)
+            return "❌ Нет новостей за последние 3 дня."
+        return "📰 Новости Киргизстана за последние 3 дня:\n\n" + "\n\n".join(recent_news)
     except Exception as e:
         logging.error(f"Ошибка при получении новостей: {e}")
         return "Ошибка при подключении к RSS."
@@ -149,58 +288,83 @@ def get_news_kyrgyzstan():
 # Command handler for /start
 async def send_welcome(message: types.Message):
     logging.info(f"Получена команда /start от пользователя {message.from_user.id}")
-    menu = (
-        "Привет! Я ИИ-бот.\n"
-        "Доступные команды:\n"
-        "/weather_bishkek - Погода в Бишкеке\n"
-        "/weather_moscow - Погода в Москве\n"
-        "/weather_issykkul - Погода в Иссык-Куле\n"
-        "/weather_bokonbaevo - Погода в Боконбаево\n"
-        "/weather_ton - Погода в Тоне\n"
-        "/currency - Курс валют\n"
-        "/news_kyrgyzstan - Новости Киргизстана за последние 3 дня\n"
-        "Просто напишите свой вопрос, и я отвечу!\n"
-    )
-    await message.reply(menu)
+    user_id = message.from_user.id
+    if user_id not in user_histories:
+        user_histories[user_id] = {'history': [], 'voice_mode': False}
+
+    # If already authenticated, show menu
+    if is_authenticated(user_id):
+        menu = (
+            "🌟 Привет! Я ИИ-бот. 🤖\n"
+            "📋 Доступные команды:\n"
+            "☀️ /weather_bishkek - Погода в Бишкеке\n"
+            "❄️ /weather_moscow - Погода в Москве\n"
+            "🏞️ /weather_issykkul - Погода в Иссык-Куле\n"
+            "🏔️ /weather_bokonbaevo - Погода в Боконбаево\n"
+            "🌄 /weather_ton - Погода в Тоне\n"
+            "💰 /currency - Курс валют\n"
+            "📰 /news_kyrgyzstan - Новости Киргизстана за последние 3 дня\n"
+            "🎤 /toggle_voice - Переключить голосовой режим\n"
+            + ("🎤 /voice [вопрос] - Ответ голосом\n" if TTS_AVAILABLE else "")
+            + "💬 Просто напишите свой вопрос, и я отвечу!\n"
+        )
+        await message.reply(menu, reply_markup=main_keyboard)
+        return
+
+    # Not authenticated: ask for password
+    user_histories[user_id]['awaiting_password'] = True
+    await message.reply('Бот приватный. Введите пароль:')
 
 # Handler for weather in Bishkek
 async def weather_bishkek(message: types.Message):
     logging.info(f"Получена команда /weather_bishkek от пользователя {message.from_user.id}")
-    await message.reply("Получаю погоду в Бишкеке...")
+    if not await ensure_auth(message):
+        return
+    await message.reply("☀️ Получаю погоду в Бишкеке...")
     response = get_weather("Bishkek")
     await message.reply(response)
 
 # Handler for weather in Moscow
 async def weather_moscow(message: types.Message):
     logging.info(f"Получена команда /weather_moscow от пользователя {message.from_user.id}")
-    await message.reply("Получаю погоду в Москве...")
+    if not await ensure_auth(message):
+        return
+    await message.reply("❄️ Получаю погоду в Москве...")
     response = get_weather("Moscow")
     await message.reply(response)
 
 # Handler for weather in Issyk-Kul
 async def weather_issykkul(message: types.Message):
     logging.info(f"Получена команда /weather_issykkul от пользователя {message.from_user.id}")
-    await message.reply("Получаю погоду в Иссык-Куле...")
+    if not await ensure_auth(message):
+        return
+    await message.reply("🏞️ Получаю погоду в Иссык-Куле...")
     response = get_weather("Issyk-Kul")
     await message.reply(response)
 
 # Handler for weather in Bokonbaevo
 async def weather_bokonbaevo(message: types.Message):
     logging.info(f"Получена команда /weather_bokonbaevo от пользователя {message.from_user.id}")
-    await message.reply("Получаю погоду в Боконбаево...")
+    if not await ensure_auth(message):
+        return
+    await message.reply("🏔️ Получаю погоду в Боконбаево...")
     response = get_weather("Bokonbaevo")
     await message.reply(response)
 
 # Handler for weather in Ton
 async def weather_ton(message: types.Message):
     logging.info(f"Получена команда /weather_ton от пользователя {message.from_user.id}")
-    await message.reply("Получаю погоду в Тоне...")
+    if not await ensure_auth(message):
+        return
+    await message.reply("🌄 Получаю погоду в Тоне...")
     response = get_weather("Ton")
     await message.reply(response)
 
 # Handler for currency
 async def currency(message: types.Message):
     logging.info(f"Получена команда /currency от пользователя {message.from_user.id}")
+    if not await ensure_auth(message):
+        return
     await message.reply("Получаю курс валют...")
     response = get_currency()
     await message.reply(response)
@@ -208,9 +372,49 @@ async def currency(message: types.Message):
 # Handler for news Kyrgyzstan
 async def news_kyrgyzstan(message: types.Message):
     logging.info(f"Получена команда /news_kyrgyzstan от пользователя {message.from_user.id}")
-    await message.reply("Получаю новости Киргизстана за последние 3 дня...")
+    if not await ensure_auth(message):
+        return
+    await message.reply("📰 Получаю новости Киргизстана за последние 3 дня...")
     response = get_news_kyrgyzstan()
     await message.reply(response)
+
+# Handler for voice response
+async def voice_handler(message: types.Message):
+    logging.info(f"Получена команда /voice от пользователя {message.from_user.id}")
+    if not await ensure_auth(message):
+        return
+    if not TTS_AVAILABLE:
+        await message.reply("🎤 Функция голосовых ответов недоступна. Установите gtts: pip install gtts")
+        return
+    user_input = message.text.replace('/voice', '').strip()
+    if not user_input:
+        await message.reply("🎤 Пожалуйста, укажите вопрос после команды /voice")
+        return
+    await message.reply("🎤 Обрабатываю ваш вопрос для голосового ответа...")
+    response = await query_deepseek([{"role": "user", "content": user_input}])
+    voice_fp = await generate_voice(response)
+    if voice_fp:
+        try:
+            await bot.send_voice(message.chat.id, voice=FSInputFile(voice_fp))
+            os.unlink(voice_fp)  # Удалить файл после отправки
+        except Exception as e:
+            logging.error(f"Ошибка при отправке голоса: {e}")
+            os.unlink(voice_fp)  # Удалить файл в случае ошибки
+            await message.reply("❌ Ошибка при отправке голоса. Отправляю текст.")
+            await message.reply(f"🤖 {response}")
+    else:
+        await message.reply("❌ Ошибка при генерации голоса.")
+
+# Handler for toggle voice mode
+async def toggle_voice(message: types.Message):
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    if user_id not in user_histories:
+        user_histories[user_id] = {'history': [], 'voice_mode': False}
+    user_histories[user_id]['voice_mode'] = not user_histories[user_id]['voice_mode']
+    status = "включен" if user_histories[user_id]['voice_mode'] else "выключен"
+    await message.reply(f"🎤 Голосовой режим {status}.")
 
 # Handler for text messages (questions)
 async def handle_text(message: types.Message):
@@ -218,23 +422,124 @@ async def handle_text(message: types.Message):
     user_input = message.text
     logging.info(f"Получен текст от пользователя {user_id}: {user_input}")
 
-    # Initialize history if not exists
+    # (friendly keyboard routing moved below after history init)
+
+    # Initialize history and settings if not exists
     if user_id not in user_histories:
-        user_histories[user_id] = []
+        user_histories[user_id] = {'history': [], 'voice_mode': False}
+
+    # If awaiting password, treat message as password attempt
+    if user_histories[user_id].get('awaiting_password'):
+        pw = user_input.strip()
+        if pw == AUTH_PASSWORD:
+            authenticated_users.add(user_id)
+            user_histories[user_id]['awaiting_password'] = False
+            await message.reply('Авторизация успешна.')
+            # send menu
+            menu = (
+                "🌟 Привет! Я ИИ-бот. 🤖\n"
+                "📋 Доступные команды:\n"
+                "☀️ /weather_bishkek - Погода в Бишкеке\n"
+                "❄️ /weather_moscow - Погода в Москве\n"
+                "🏞️ /weather_issykkul - Погода в Иссык-Куле\n"
+                "🏔️ /weather_bokonbaevo - Погода в Боконбаево\n"
+                "🌄 /weather_ton - Погода в Тоне\n"
+                "💰 /currency - Курс валют\n"
+                "📰 /news_kyrgyzstan - Новости Киргизстана за последние 3 дня\n"
+                "🎤 /toggle_voice - Переключить голосовой режим\n"
+                + ("🎤 /voice [вопрос] - Ответ голосом\n" if TTS_AVAILABLE else "")
+                + "💬 Просто напишите свой вопрос, и я отвечу!\n"
+            )
+            await message.reply(menu, reply_markup=main_keyboard)
+        else:
+            await message.reply('Неверный пароль. Попробуйте ещё раз.')
+        return
+
+    # If the user is in contact-search mode, treat this message as the query
+    if user_histories[user_id].get('awaiting_contact_query'):
+        query = user_input.strip()
+        user_histories[user_id]['awaiting_contact_query'] = False
+        if not query:
+            await message.reply('Пожалуйста, введите имя или номер для поиска контакта.')
+            return
+        results = search_contacts(query)
+        if not results:
+            await message.reply('Контакты не найдены.')
+            return
+        lines = [f"{i+1}. {name}: {phone}" for i, (name, phone) in enumerate(results)]
+        await message.reply('Найденные контакты:\n' + '\n'.join(lines))
+        return
+
+    # Route friendly keyboard labels to command handlers
+    if user_input == 'Погода Бишкек':
+        await weather_bishkek(message)
+        return
+    if user_input == 'Погода Москва':
+        await weather_moscow(message)
+        return
+    if user_input == 'Погода Иссык-Куль':
+        await weather_issykkul(message)
+        return
+    if user_input == 'Погода Боконбаево':
+        await weather_bokonbaevo(message)
+        return
+    if user_input == 'Погода Тон':
+        await weather_ton(message)
+        return
+    if user_input == 'Курс валют':
+        await currency(message)
+        return
+    if user_input == 'Новости':
+        await news_kyrgyzstan(message)
+        return
+    if user_input == 'Переключить голос':
+        await toggle_voice(message)
+        return
+    if user_input == 'Голосовой ответ':
+        await message.reply("Чтобы получить голосовой ответ, используйте: /voice <ваш вопрос>")
+        return
+    if user_input == 'Контакты':
+        # Show full contacts list as inline buttons
+        await show_all_contacts(message)
+        return
 
     # Add user message to history
-    user_histories[user_id].append({"role": "user", "content": user_input})
+    user_histories[user_id]['history'].append({"role": "user", "content": user_input})
 
     # Limit history to last 20 messages to avoid exceeding limits
-    if len(user_histories[user_id]) > 20:
-        user_histories[user_id] = user_histories[user_id][-20:]
+    if len(user_histories[user_id]['history']) > 20:
+        user_histories[user_id]['history'] = user_histories[user_id]['history'][-20:]
 
-    await message.reply("Обрабатываю ваш вопрос...")
-    response = query_deepseek(user_histories[user_id])
-    await message.reply(response)
+    await message.reply("🤖 Обрабатываю ваш вопрос...")
+    response = await query_deepseek(user_histories[user_id]['history'])
+    # Limit response length for TTS to avoid issues
+    voice_text = response[:2000] if len(response) > 2000 else response
+    if user_histories[user_id]['voice_mode']:
+        if TTS_AVAILABLE:
+            voice_file = await generate_voice(voice_text)
+            logging.info(f"Voice file получен: {voice_file is not None}")
+            if voice_file:
+                logging.info("Отправка голоса")
+                try:
+                    await bot.send_voice(message.chat.id, voice=FSInputFile(voice_file))
+                    logging.info("Голос отправлен успешно")
+                    os.unlink(voice_file)  # Удалить файл после отправки
+                except Exception as e:
+                    logging.error(f"Ошибка при отправке голоса: {e}")
+                    os.unlink(voice_file)  # Удалить файл в случае ошибки
+                    await message.reply("❌ Ошибка при отправке голоса. Отправляю текст.")
+                    await message.reply(f"🤖 {response}")
+            else:
+                await message.reply("❌ Ошибка при генерации голоса. Отправляю текст.")
+                await message.reply(f"🤖 {response}")
+        else:
+            await message.reply("🎤 Голосовые ответы недоступны. Отправляю текст.")
+            await message.reply(f"🤖 {response}")
+    else:
+        await message.reply(f"🤖 {response}")
 
     # Add assistant response to history
-    user_histories[user_id].append({"role": "assistant", "content": response})
+    user_histories[user_id]['history'].append({"role": "assistant", "content": response})
 
 async def main():
     dp.message.register(send_welcome, Command(commands=['start']))
@@ -245,7 +550,10 @@ async def main():
     dp.message.register(weather_ton, Command(commands=['weather_ton']))
     dp.message.register(currency, Command(commands=['currency']))
     dp.message.register(news_kyrgyzstan, Command(commands=['news_kyrgyzstan']))
+    dp.message.register(voice_handler, Command(commands=['voice']))
+    dp.message.register(toggle_voice, Command(commands=['toggle_voice']))
     dp.message.register(handle_text)
+    dp.callback_query.register(contact_callback_handler)
     logging.info("Бот запущен и готов к обработке сообщений.")
     await dp.start_polling(bot)
 

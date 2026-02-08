@@ -4,14 +4,14 @@
     "microsoft/wizardlm-2-8x22b",
     "anthropic/claude-3-haiku:beta"
   ],
-  "default_model": "xiaomi/mimo-v2-flash:free",
+  "default_model": "arcee-ai/trinity-large-preview:free",
   "max_tokens_base": 100,
   "max_tokens_scale_factor": 0.5,
   "retry_attempts": 3,
   "language": "ru",
   "fallback_on_error": true,
   "weather_api_key": "56324f46965179de16b1e12011f953d4",
-  "openrouter_api_key": "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",
+  "openrouter_api_key": "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",
   "currency_api_url": "https://api.exchangerate-api.com/v4/latest/USD",
   "rss_url": "https://kaktus.media/?rss"
 }
