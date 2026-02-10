@@ -1,96 +1,153 @@
 # Telegram AI Bot
 
-Version: 2.1.0
+Version: 2.2.0
 
-This is a Telegram bot that uses AI to answer user questions via OpenRouter API, and provides weather, currency information, news, and contacts.
+Telegram бот с ИИ, погодой, новостями, генерацией изображений и системой контактов. Работает на Railway с автоматическим деплоем.
 
-## Setup
+## 🚀 Быстрый старт
 
-1. Clone the repository.
-2. Create a virtual environment: `python -m venv .venv`
-3. Activate it: `.venv\Scripts\activate` (Windows) or `source .venv/bin/activate` (Linux/Mac)
-4. Install dependencies: `pip install -r requirements.txt`
-5. Configure API keys (choose one method):
-   
-   **For Railway (Production - Recommended):**
-   - Set environment variables in Railway Dashboard:
-     - `TELEGRAM_API_TOKEN`: Your Telegram Bot API token from BotFather.
-     - `OPENROUTER_API_KEY`: Your OpenRouter API key.
-     - `WEATHER_API_KEY`: Your OpenWeatherMap API key.
-     - `ADMIN_ID`: Your Telegram numeric ID (for admin panel access).
-   - These variables override config.json and are secure (not visible in GitHub).
-   - Get your Telegram ID: message `@userinfobot` on Telegram.
-   
-   **For Local Development (not recommended for this bot):**
-   - Copy `config.example.json` to `config.json`.
-   - Edit `config.json` and replace placeholder API keys with your actual keys.
+```
+GitHub → Railway (Auto-deploy)
+```
 
-6. Deploy to Railway: Push to GitHub, Railway auto-deploys.
+1. Форкни репозиторий
+2. Подключи к Railway
+3. Добавь переменные окружения
+4. Готово! Бот работает 24/7
 
-## Features
+## ✨ Features
 
-- Responds to /start command with menu.
-- Answers any user message using AI via OpenRouter API.
-- /weather_bishkek: Get weather in Bishkek.
-- /weather_moscow: Get weather in Moscow.
-- /weather_issykkul: Get weather in Issyk-Kul.
-- /weather_bokonbaevo: Get weather in Bokonbaevo.
-- /weather_ton: Get weather in Ton.
-- /currency: Get USD exchange rates to KGS and RUB.
-- /news_kyrgyzstan: Get latest news from Kyrgyzstan (last 3 days).
-- /toggle_voice: Toggle voice response mode.
-- /voice [question]: Get voice response for a question.
-- **Edge-TTS**: High-quality voice responses using Microsoft Edge voices (ru-RU-SvetlanaNeural).
-- **Voice Recognition**: Send voice messages and bot transcribes + responds (Whisper API).
-- **AI News Digest**: Personalized news from 20+ RSS sources with sentiment analysis.
-- **AI Image Generation**: Generate images with Pollinations.ai (free, no API key) via `/image` command.
-- **DeepSeek R1**: Advanced AI chat (free, GPT-4 level) via `/gpt4` command.
-- **Admin Panel**: Statistics, broadcast messages, user info.
-- Contacts: View and search contacts with inline keyboard.
-- Reply keyboard for quick access to commands.
-- Password protection for bot access.
+### 🤖 AI & Чат
+- **OpenRouter API** с автоматическим fallback между free моделями
+- **DeepSeek R1** — продвинутый AI через `/gpt4`
+- **Распознавание голоса** — отправь голосовое, бот ответит текстом
+- **Голосовые ответы** — Edge-TTS (ru-RU-SvetlanaNeural) или gTTS
 
-## Changelog
+### 🎨 Генерация изображений
+- **Мульти-провайдер** с автоматическим fallback:
+  1. Hugging Face (FLUX.1 schnell) — бесплатно
+  2. Cloudflare Workers AI — 10k/день
+  3. Pollinations.ai — всегда бесплатно
+- Кнопка в меню: **🎨 Сгенерировать картинку**
+
+### 📰 Новости
+- **20+ RSS источников** (Tech, AI, Science, Kyrgyzstan, World, Sports)
+- **AI анализ тональности** новостей
+- **Персонализированный дайджест** по интересам
+- **Кнопка в меню**: **📰 AI Дайджест**
+
+### 🌤️ Погода & Курсы
+- Погода: Бишкек, Москва, Иссык-Куль, Боконбаево, Тон
+- Курсы валют: USD → KGS, RUB
+
+### 👥 Контакты
+- Добавление, удаление, поиск контактов
+- **PostgreSQL** — данные сохраняются навсегда!
+
+### 👤 Админ-панель
+- Статистика, рассылка, управление пользователями
+- **Кнопка в меню**: **👤 Админ** (только для ADMIN_ID)
+
+## 🛠️ Настройка
+
+### Переменные окружения (Railway)
+
+| Переменная | Описание | Обязательная |
+|------------|----------|--------------|
+| `TELEGRAM_API_TOKEN` | Токен от @BotFather | ✅ |
+| `OPENROUTER_API_KEY` | Ключ от openrouter.ai | ✅ |
+| `WEATHER_API_KEY` | Ключ от openweathermap.org | ✅ |
+| `ADMIN_ID` | Твой Telegram ID | ✅ |
+| `HF_TOKEN` | Hugging Face токен (для FLUX.1) | ❌ |
+| `CF_API_TOKEN` | Cloudflare API токен | ❌ |
+| `CF_ACCOUNT_ID` | Cloudflare Account ID | ❌ |
+
+### PostgreSQL (обязательно для сохранения данных!)
+
+1. Railway Dashboard → "+ New" → "Database" → "Add PostgreSQL"
+2. Railway автоматически создаст `DATABASE_URL`
+3. Готово! Данные сохраняются навсегда.
+
+> ⚠️ Без PostgreSQL данные (контакты, настройки) сбрасываются после деплоя!
+
+## 📱 Меню бота
+
+```
+[Погода Бишкек] [Погода Москва]
+[Погода Иссык-Куль] [Погода Боконбаево] [Погода Тон]
+[Курс валют] [Новости] [Контакты]
+[🎨 Сгенерировать картинку] [📰 AI Дайджест]
+[Переключить голос] [Голосовой ответ] [👤 Админ]
+```
+
+## 📋 Команды
+
+| Команда | Описание |
+|---------|----------|
+| `/start` | Начать работу с ботом |
+| `/help` | Список команд |
+| `/weather_*` | Погода в городе |
+| `/currency` | Курсы валют |
+| `/news_kyrgyzstan` | Новости Кыргызстана |
+| `/digest` | AI дайджест новостей |
+| `/interests` | Настроить интересы |
+| `/schedule` | Расписание дайджеста |
+| `/toggle_voice` | Вкл/выкл голосовые ответы |
+| `/voice <текст>` | Голосовое сообщение |
+| `/image <описание>` | Генерация картинки |
+| `/gpt4 <вопрос>` | DeepSeek R1 чат |
+| `/admin` | Админ-панель |
+
+## 📝 Changelog
+
+### Version 2.2.0 - PostgreSQL & Smart Menu (2025-02-10)
+- **Added:** PostgreSQL поддержка — данные сохраняются навсегда!
+- **Added:** Кнопки в меню: 🎨 Сгенерировать картинку, 📰 AI Дайджест, 👤 Админ
+- **Added:** Умный fallback для меню — сброс состояний при переключении
+- **Added:** Multi-provider OpenRouter с автоматическим переключением моделей
+- **Changed:** Image generation — только бесплатные провайдеры (HF, Cloudflare, Pollinations)
+- **Fixed:** SSL подключение к PostgreSQL на Railway
 
 ### Version 2.1.0 - AI Image & DeepSeek (Free Models)
-- **Added:** Image generation with ByteDance Seedream 4.5 **(free)** (`/image <prompt>`).
-- **Added:** DeepSeek R1 chat **(free, GPT-4 level)** for complex tasks (`/gpt4 <question>`).
+- **Added:** Image generation (`/image <prompt>`) — Pollinations.ai
+- **Added:** DeepSeek R1 chat (`/gpt4 <question>`) — GPT-4 level, free
 
 ### Version 2.0.0 - AI News Digest
-- **Added:** News aggregator with 20+ RSS sources (Tech, AI, Science, Space, Finance, Kyrgyzstan, World, Sports).
-- **Added:** AI sentiment analysis for each news (positive/negative/neutral).
-- **Added:** Personalized news feeds - users choose interests.
-- **Added:** Scheduled digest delivery every day.
-- **Added:** Commands: `/interests`, `/digest`, `/schedule`.
-- **Added:** Admin commands: `/collect_news`, `/news_stats`.
+- **Added:** News aggregator с 20+ RSS источниками
+- **Added:** AI sentiment analysis (positive/negative/neutral)
+- **Added:** Персонализированные новостные ленты
+- **Added:** Команды: `/interests`, `/digest`, `/schedule`
 
 ### Version 1.5.0
-- **Added:** Admin panel (`/admin`, `/broadcast`, `/user_info`) - only for admin.
-- **Added:** Voice recognition - transcribe voice messages using Whisper API.
-- **Added:** Webhook support for production (automatic on Railway).
+- **Added:** Admin panel (`/admin`, `/broadcast`, `/user_info`)
+- **Added:** Voice recognition (Whisper API)
+- **Added:** Webhook support
 
 ### Version 1.4.0
-- **Added:** Edge-TTS integration - high-quality voice synthesis using Microsoft Edge voices.
-- **Changed:** Voice responses now use `ru-RU-SvetlanaNeural` (female) by default for more natural sound.
-- **Changed:** Fallback to gTTS if Edge-TTS is unavailable.
+- **Added:** Edge-TTS integration (ru-RU-SvetlanaNeural)
+- **Changed:** Fallback to gTTS if Edge-TTS unavailable
 
 ### Version 1.3.0
-- **Changed:** Updated AI model to `arcee-ai/trinity-large-preview:free` (free model).
-- **Changed:** Fixed OpenRouter API response parsing to correctly extract AI message content.
-- **Added:** News functionality - get latest news from Kyrgyzstan via RSS (kaktus.media).
-- **Added:** Contacts feature - view and search contacts with inline keyboard.
-- **Added:** Voice response support using Google Text-to-Speech (gTTS).
-- **Added:** Voice mode toggle for automatic voice responses.
-- **Added:** Password protection (`AUTH_PASSWORD = "1916"`) for bot access.
-- **Added:** Extended weather locations - Issyk-Kul, Bokonbaevo, Ton.
-- **Added:** Reply keyboard with quick buttons for weather, currency, news, contacts, and voice mode.
+- **Added:** Contacts feature с inline keyboard
+- **Added:** Voice responses (gTTS)
+- **Added:** Extended weather locations
+- **Added:** Reply keyboard
 
 ### Version 1.2.0
-- Added weather functionality for Bishkek and Moscow using OpenWeatherMap API.
-- Added currency exchange rates (USD to KGS and RUB) using ExchangeRate API.
-- Updated bot menu with available commands.
-- Simplified AI query function for better reliability.
-- Added configuration options for weather and currency APIs in config.json.
+- Added weather functionality
+- Added currency exchange rates
 
 ### Version 1.1.0
-- Initial release with AI question answering via OpenRouter API.
+- Initial release with OpenRouter API
+
+## 🔧 Технологии
+
+- **aiogram 3** — Telegram Bot API
+- **OpenRouter** — AI модели (бесплатный tier)
+- **PostgreSQL** — база данных (Railway)
+- **FLUX.1 / SDXL** — генерация изображений
+- **Edge-TTS / gTTS** — текст в речь
+
+## 📄 Лицензия
+
+MIT License
