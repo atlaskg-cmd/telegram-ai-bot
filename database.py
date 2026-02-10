@@ -13,8 +13,10 @@ try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
     POSTGRES_AVAILABLE = True
-except ImportError:
+    logging.info("psycopg2 imported successfully")
+except ImportError as e:
     POSTGRES_AVAILABLE = False
+    logging.warning(f"psycopg2 not available: {e}")
 
 # SQLite for local development
 import sqlite3
@@ -24,7 +26,23 @@ class Database:
     def __init__(self):
         # Check if Railway PostgreSQL is available
         self.database_url = os.environ.get("DATABASE_URL")
-        self.use_postgres = POSTGRES_AVAILABLE and self.database_url
+        self.use_postgres = False
+        
+        logging.info(f"DATABASE_URL exists: {bool(self.database_url)}")
+        if self.database_url:
+            logging.info(f"DATABASE_URL starts with: {self.database_url[:20]}...")
+        logging.info(f"POSTGRES_AVAILABLE: {POSTGRES_AVAILABLE}")
+        
+        if POSTGRES_AVAILABLE and self.database_url:
+            try:
+                # Test connection
+                conn = psycopg2.connect(self.database_url, sslmode='require')
+                conn.close()
+                self.use_postgres = True
+                logging.info("✅ PostgreSQL connection successful")
+            except Exception as e:
+                logging.error(f"❌ PostgreSQL connection failed: {e}")
+                self.use_postgres = False
         
         if self.use_postgres:
             logging.info("Using PostgreSQL database (Railway)")
@@ -37,182 +55,193 @@ class Database:
     def get_connection(self):
         """Get database connection"""
         if self.use_postgres:
-            conn = psycopg2.connect(self.database_url)
+            # Railway requires SSL
+            conn = psycopg2.connect(self.database_url, sslmode='require')
             return conn
         else:
             conn = sqlite3.connect(self.db_file)
             conn.row_factory = sqlite3.Row
             return conn
     
-    def execute(self, conn, query: str, params: tuple = ()):
-        """Execute query with compatibility for both SQLite and PostgreSQL"""
-        cursor = conn.cursor()
-        # Convert ? to %s for PostgreSQL
-        if self.use_postgres:
-            query = query.replace('?', '%s')
-        cursor.execute(query, params)
-        return cursor
-    
     def init_db(self):
         """Initialize database tables"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            # Users table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    telegram_id BIGINT PRIMARY KEY,
-                    username TEXT,
-                    first_name TEXT,
-                    last_name TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # Chat history table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS chat_history (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(telegram_id)
-                )
-            ''' if self.use_postgres else '''
-                CREATE TABLE IF NOT EXISTS chat_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(telegram_id)
-                )
-            ''')
-            
-            # Contacts table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS contacts (
-                    id SERIAL PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    phone TEXT NOT NULL,
-                    added_by BIGINT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (added_by) REFERENCES users(telegram_id)
-                )
-            ''' if self.use_postgres else '''
-                CREATE TABLE IF NOT EXISTS contacts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    phone TEXT NOT NULL,
-                    added_by INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (added_by) REFERENCES users(telegram_id)
-                )
-            ''')
-            
-            # User settings table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_settings (
-                    user_id BIGINT PRIMARY KEY,
-                    voice_mode INTEGER DEFAULT 0,
-                    preferred_voice TEXT DEFAULT 'ru-RU-SvetlanaNeural',
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(telegram_id)
-                )
-            ''')
-            
-            # News articles table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS news_articles (
-                    id SERIAL PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    link TEXT UNIQUE NOT NULL,
-                    summary TEXT,
-                    category TEXT DEFAULT 'other',
-                    source_name TEXT,
-                    source_category TEXT,
-                    published TIMESTAMP,
-                    sentiment TEXT DEFAULT 'neutral',
-                    sentiment_score REAL DEFAULT 0.0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''' if self.use_postgres else '''
-                CREATE TABLE IF NOT EXISTS news_articles (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    link TEXT UNIQUE NOT NULL,
-                    summary TEXT,
-                    category TEXT DEFAULT 'other',
-                    source_name TEXT,
-                    source_category TEXT,
-                    published TIMESTAMP,
-                    sentiment TEXT DEFAULT 'neutral',
-                    sentiment_score REAL DEFAULT 0.0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # User interests table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_interests (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT,
-                    category TEXT NOT NULL,
-                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(telegram_id),
-                    UNIQUE(user_id, category)
-                )
-            ''' if self.use_postgres else '''
-                CREATE TABLE IF NOT EXISTS user_interests (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    category TEXT NOT NULL,
-                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(telegram_id),
-                    UNIQUE(user_id, category)
-                )
-            ''')
-            
-            # User news feedback table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_news_feedback (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT,
-                    news_id INTEGER,
-                    feedback INTEGER,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(telegram_id),
-                    FOREIGN KEY (news_id) REFERENCES news_articles(id),
-                    UNIQUE(user_id, news_id)
-                )
-            ''' if self.use_postgres else '''
-                CREATE TABLE IF NOT EXISTS user_news_feedback (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    news_id INTEGER,
-                    feedback INTEGER,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(telegram_id),
-                    FOREIGN KEY (news_id) REFERENCES news_articles(id),
-                    UNIQUE(user_id, news_id)
-                )
-            ''')
-            
-            # Digest schedule table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS digest_schedules (
-                    user_id BIGINT PRIMARY KEY,
-                    enabled INTEGER DEFAULT 0,
-                    schedule_time TEXT DEFAULT '09:00',
-                    last_sent TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(telegram_id)
-                )
-            ''')
-            
-            conn.commit()
-            logging.info("Database initialized successfully")
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Users table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS users (
+                        telegram_id BIGINT PRIMARY KEY,
+                        username TEXT,
+                        first_name TEXT,
+                        last_name TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                # Chat history table
+                if self.use_postgres:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS chat_history (
+                            id SERIAL PRIMARY KEY,
+                            user_id BIGINT,
+                            role TEXT NOT NULL,
+                            content TEXT NOT NULL,
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(telegram_id)
+                        )
+                    ''')
+                else:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS chat_history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            role TEXT NOT NULL,
+                            content TEXT NOT NULL,
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(telegram_id)
+                        )
+                    ''')
+                
+                # Contacts table
+                if self.use_postgres:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS contacts (
+                            id SERIAL PRIMARY KEY,
+                            name TEXT NOT NULL,
+                            phone TEXT NOT NULL,
+                            added_by BIGINT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (added_by) REFERENCES users(telegram_id)
+                        )
+                    ''')
+                else:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS contacts (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL,
+                            phone TEXT NOT NULL,
+                            added_by INTEGER,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (added_by) REFERENCES users(telegram_id)
+                        )
+                    ''')
+                
+                # User settings table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS user_settings (
+                        user_id BIGINT PRIMARY KEY,
+                        voice_mode INTEGER DEFAULT 0,
+                        preferred_voice TEXT DEFAULT 'ru-RU-SvetlanaNeural',
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(telegram_id)
+                    )
+                ''')
+                
+                # News articles table
+                if self.use_postgres:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS news_articles (
+                            id SERIAL PRIMARY KEY,
+                            title TEXT NOT NULL,
+                            link TEXT UNIQUE NOT NULL,
+                            summary TEXT,
+                            category TEXT DEFAULT 'other',
+                            source_name TEXT,
+                            source_category TEXT,
+                            published TIMESTAMP,
+                            sentiment TEXT DEFAULT 'neutral',
+                            sentiment_score REAL DEFAULT 0.0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+                else:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS news_articles (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            title TEXT NOT NULL,
+                            link TEXT UNIQUE NOT NULL,
+                            summary TEXT,
+                            category TEXT DEFAULT 'other',
+                            source_name TEXT,
+                            source_category TEXT,
+                            published TIMESTAMP,
+                            sentiment TEXT DEFAULT 'neutral',
+                            sentiment_score REAL DEFAULT 0.0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+                
+                # User interests table
+                if self.use_postgres:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS user_interests (
+                            id SERIAL PRIMARY KEY,
+                            user_id BIGINT,
+                            category TEXT NOT NULL,
+                            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+                            UNIQUE(user_id, category)
+                        )
+                    ''')
+                else:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS user_interests (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            category TEXT NOT NULL,
+                            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+                            UNIQUE(user_id, category)
+                        )
+                    ''')
+                
+                # User news feedback table
+                if self.use_postgres:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS user_news_feedback (
+                            id SERIAL PRIMARY KEY,
+                            user_id BIGINT,
+                            news_id INTEGER,
+                            feedback INTEGER,
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+                            FOREIGN KEY (news_id) REFERENCES news_articles(id),
+                            UNIQUE(user_id, news_id)
+                        )
+                    ''')
+                else:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS user_news_feedback (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            news_id INTEGER,
+                            feedback INTEGER,
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+                            FOREIGN KEY (news_id) REFERENCES news_articles(id),
+                            UNIQUE(user_id, news_id)
+                        )
+                    ''')
+                
+                # Digest schedule table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS digest_schedules (
+                        user_id BIGINT PRIMARY KEY,
+                        enabled INTEGER DEFAULT 0,
+                        schedule_time TEXT DEFAULT '09:00',
+                        last_sent TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(telegram_id)
+                    )
+                ''')
+                
+                conn.commit()
+                logging.info(f"✅ Database initialized successfully (PostgreSQL: {self.use_postgres})")
+        except Exception as e:
+            logging.error(f"❌ Database initialization failed: {e}")
+            raise
     
     # ========== USERS ==========
     
@@ -531,7 +560,6 @@ class Database:
         """Get news by categories (last 3 days)"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            placeholders = ','.join('?' for _ in categories)
             
             if self.use_postgres:
                 placeholders = ','.join('%s' for _ in categories)
@@ -542,7 +570,10 @@ class Database:
                     ORDER BY published DESC
                     LIMIT %s
                 ''', (*categories, limit))
+                columns = [desc[0] for desc in cursor.description]
+                return [dict(zip(columns, row)) for row in cursor.fetchall()]
             else:
+                placeholders = ','.join('?' for _ in categories)
                 cursor.execute(f'''
                     SELECT * FROM news_articles 
                     WHERE category IN ({placeholders})
@@ -550,11 +581,6 @@ class Database:
                     ORDER BY published DESC
                     LIMIT ?
                 ''', (*categories, limit))
-            
-            if self.use_postgres:
-                columns = [desc[0] for desc in cursor.description]
-                return [dict(zip(columns, row)) for row in cursor.fetchall()]
-            else:
                 return [dict(row) for row in cursor.fetchall()]
     
     def get_latest_news(self, limit: int = 20) -> List[Dict]:
@@ -569,6 +595,8 @@ class Database:
                     ORDER BY published DESC
                     LIMIT %s
                 ''', (limit,))
+                columns = [desc[0] for desc in cursor.description]
+                return [dict(zip(columns, row)) for row in cursor.fetchall()]
             else:
                 cursor.execute('''
                     SELECT * FROM news_articles 
@@ -576,11 +604,6 @@ class Database:
                     ORDER BY published DESC
                     LIMIT ?
                 ''', (limit,))
-            
-            if self.use_postgres:
-                columns = [desc[0] for desc in cursor.description]
-                return [dict(zip(columns, row)) for row in cursor.fetchall()]
-            else:
                 return [dict(row) for row in cursor.fetchall()]
     
     # ========== USER INTERESTS ==========
@@ -741,6 +764,7 @@ class Database:
                     AND schedule_time = %s
                     AND (last_sent IS NULL OR DATE(last_sent) < CURRENT_DATE)
                 ''', (current_time,))
+                return [row[0] for row in cursor.fetchall()]
             else:
                 cursor.execute('''
                     SELECT user_id FROM digest_schedules 
@@ -748,10 +772,6 @@ class Database:
                     AND schedule_time = ?
                     AND (last_sent IS NULL OR date(last_sent) < date('now'))
                 ''', (current_time,))
-            
-            if self.use_postgres:
-                return [row[0] for row in cursor.fetchall()]
-            else:
                 return [row['user_id'] for row in cursor.fetchall()]
     
     def update_last_sent(self, user_id: int):
