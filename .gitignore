@@ -20,6 +20,7 @@ venv/
 
 # Local config (не пушим секреты!)
 config.local.json
+config.json
 
 # Temp files
 *.tmp
