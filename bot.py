@@ -53,6 +53,11 @@ WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", config.get("weather_api_key"
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# Webhook configuration (for production)
+WEBHOOK_HOST = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")  # Railway provides this automatically
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = f"https://{WEBHOOK_HOST}{WEBHOOK_PATH}" if WEBHOOK_HOST else ""
+
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
@@ -61,6 +66,13 @@ db = Database()
 
 # Dictionary for temporary states (password input, etc.)
 user_states = {}
+
+# Admin configuration
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))  # Установи свой Telegram ID в Railway Variables
+
+def is_admin(user_id: int) -> bool:
+    """Check if user is admin"""
+    return user_id == ADMIN_ID
 
 # Warn if OpenRouter key missing
 if not OPENROUTER_API_KEY:
@@ -234,6 +246,32 @@ async def generate_voice_edge(text, voice="ru-RU-SvetlanaNeural"):
     except Exception as e:
         logging.error(f"Ошибка Edge-TTS: {e}")
         return None
+
+# ========== SPEECH RECOGNITION (Whisper) ==========
+
+async def transcribe_voice(voice_file_path: str) -> str:
+    """Transcribe voice message using OpenAI Whisper via OpenRouter"""
+    try:
+        url = "https://openrouter.ai/api/v1/audio/transcriptions"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}"
+        }
+        
+        with open(voice_file_path, 'rb') as audio_file:
+            files = {'file': audio_file}
+            data = {'model': 'openai/whisper-1'}
+            
+            response = requests.post(url, headers=headers, files=files, data=data)
+            
+            if response.status_code == 200:
+                result = response.json()
+                return result.get('text', '')
+            else:
+                logging.error(f"Whisper error: {response.status_code} - {response.text}")
+                return ""
+    except Exception as e:
+        logging.error(f"Error transcribing voice: {e}")
+        return ""
 
 # Async wrapper for generate_voice (tries Edge-TTS first, falls back to gTTS)
 async def generate_voice(text, lang='ru'):
@@ -654,6 +692,146 @@ async def handle_text(message: types.Message):
     # Save assistant response to database
     db.add_message(user_id, 'assistant', response)
 
+# ========== ADMIN COMMANDS ==========
+
+async def admin_panel(message: types.Message):
+    """Admin panel with full statistics"""
+    if not is_admin(message.from_user.id):
+        await message.reply("⛔ Доступ запрещен.")
+        return
+    
+    stats = db.get_admin_stats()
+    await message.reply(
+        f"👑 <b>Панель администратора</b>\n\n"
+        f"📊 <b>Статистика:</b>\n"
+        f"👥 Всего пользователей: {stats['total_users']}\n"
+        f"🟢 Активных сегодня: {stats['active_today']}\n"
+        f"📇 Всего контактов: {stats['total_contacts']}\n"
+        f"💬 Всего сообщений: {stats['total_messages']}\n\n"
+        f"<b>Команды:</b>\n"
+        f"/broadcast &lt;текст&gt; - Рассылка всем\n"
+        f"/user_info &lt;id&gt; - Инфо о пользователе"
+    )
+
+async def broadcast_message(message: types.Message):
+    """Broadcast message to all users"""
+    if not is_admin(message.from_user.id):
+        await message.reply("⛔ Доступ запрещен.")
+        return
+    
+    text = message.text.replace('/broadcast', '').strip()
+    if not text:
+        await message.reply("Использование: /broadcast &lt;текст&gt;")
+        return
+    
+    # Получаем всех пользователей из БД
+    users = db.get_all_users()
+    
+    sent = 0
+    failed = 0
+    for user in users:
+        try:
+            await bot.send_message(user['telegram_id'], f"📢 <b>Сообщение от админа:</b>\n\n{text}")
+            sent += 1
+        except:
+            failed += 1
+    
+    await message.reply(f"✅ Отправлено: {sent}\n❌ Ошибок: {failed}")
+
+async def user_info(message: types.Message):
+    """Get info about specific user"""
+    if not is_admin(message.from_user.id):
+        await message.reply("⛔ Доступ запрещен.")
+        return
+    
+    args = message.text.split()
+    if len(args) < 2:
+        await message.reply("Использование: /user_info &lt;telegram_id&gt;")
+        return
+    
+    try:
+        user_id = int(args[1])
+    except ValueError:
+        await message.reply("❌ Неверный ID пользователя.")
+        return
+    
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            await message.reply("❌ Пользователь не найден.")
+            return
+        
+        stats = db.get_user_stats(user_id)
+        
+        await message.reply(
+            f"👤 <b>Информация о пользователе</b>\n\n"
+            f"ID: {user['telegram_id']}\n"
+            f"Username: @{user['username'] or 'нет'}\n"
+            f"Имя: {user['first_name'] or 'нет'} {user['last_name'] or ''}\n"
+            f"Зарегистрирован: {user['created_at']}\n"
+            f"Последняя активность: {user['last_active']}\n\n"
+            f"📊 Сообщений: {stats['message_count']}\n"
+            f"👤 Контактов: {stats['contact_count']}"
+        )
+
+async def handle_voice_message(message: types.Message):
+    """Handle incoming voice messages"""
+    user_id = message.from_user.id
+    
+    if not await ensure_auth(message):
+        return
+    
+    if not message.voice:
+        return
+    
+    voice = message.voice
+    if voice.duration > 60:
+        await message.reply("🎤 Голосовое сообщение слишком длинное. Максимум 60 секунд.")
+        return
+    
+    await message.reply("🎤 Распознаю голосовое сообщение...")
+    
+    try:
+        file = await bot.get_file(voice.file_id)
+        voice_file_path = tempfile.mktemp(suffix='.ogg')
+        await bot.download_file(file.file_path, voice_file_path)
+        
+        transcribed_text = await transcribe_voice(voice_file_path)
+        os.unlink(voice_file_path)
+        
+        if not transcribed_text:
+            await message.reply("❌ Не удалось распознать голосовое сообщение.")
+            return
+        
+        await message.reply(f"📝 <b>Распознанный текст:</b>\n{transcribed_text}")
+        
+        db.add_message(user_id, 'user', transcribed_text)
+        history = db.get_chat_history(user_id, limit=20)
+        
+        response = await query_deepseek(history)
+        db.add_message(user_id, 'assistant', response)
+        
+        voice_mode = db.get_voice_mode(user_id)
+        if voice_mode and (TTS_AVAILABLE or EDGE_TTS_AVAILABLE):
+            voice_text = response[:2000] if len(response) > 2000 else response
+            voice_file = await generate_voice(voice_text)
+            if voice_file:
+                try:
+                    await bot.send_voice(message.chat.id, voice=FSInputFile(voice_file))
+                    os.unlink(voice_file)
+                    return
+                except:
+                    pass
+        
+        await message.reply(f"🤖 {response}")
+            
+    except Exception as e:
+        logging.error(f"Error handling voice: {e}")
+        await message.reply("❌ Ошибка при обработке голосового сообщения.")
+
 async def main():
     dp.message.register(send_welcome, Command(commands=['start']))
     dp.message.register(weather_bishkek, Command(commands=['weather_bishkek']))
@@ -667,6 +845,13 @@ async def main():
     dp.message.register(toggle_voice, Command(commands=['toggle_voice']))
     dp.message.register(clear_history, Command(commands=['clear_history']))
     dp.message.register(user_stats, Command(commands=['stats']))
+    # Admin commands
+    dp.message.register(admin_panel, Command(commands=['admin']))
+    dp.message.register(broadcast_message, Command(commands=['broadcast']))
+    dp.message.register(user_info, Command(commands=['user_info']))
+    # Voice messages handler
+    dp.message.register(handle_voice_message, lambda msg: msg.voice is not None)
+    # Text messages
     dp.message.register(handle_text)
     dp.callback_query.register(contact_callback_handler)
     logging.info("Бот запущен и готов к обработке сообщений.")

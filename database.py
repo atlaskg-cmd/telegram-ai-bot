@@ -245,7 +245,15 @@ class Database:
                 "contact_count": contact_count
             }
     
-    # ========== ADMIN STATS ==========
+    # ========== ADMIN FUNCTIONS ==========
+    
+    def get_all_users(self) -> List[Dict]:
+        """Get all users for broadcast"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT telegram_id, username, first_name FROM users')
+            return [{"telegram_id": row["telegram_id"], "username": row["username"], 
+                    "first_name": row["first_name"]} for row in cursor.fetchall()]
     
     def get_admin_stats(self) -> Dict:
         """Get admin statistics"""
