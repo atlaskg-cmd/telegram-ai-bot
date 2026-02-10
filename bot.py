@@ -651,7 +651,7 @@ async def handle_text(message: types.Message):
         await toggle_voice(message)
         return
     if user_input == 'Голосовой ответ':
-        await message.reply("Чтобы получить голосовой ответ, используйте: /voice <ваш вопрос>")
+        await message.reply("Чтобы получить голосовой ответ, используйте: /voice &lt;ваш вопрос&gt;")
         return
     if user_input == 'Контакты':
         # Show full contacts list as inline buttons
@@ -859,7 +859,7 @@ async def show_interests(message: types.Message):
         f"📰 <b>Ваши интересы:</b>\n{interests_text}\n\n"
         f"Доступные категории:\n" +
         "\n".join([f"/add_{cat} - добавить {cat}" for cat in categories]) + "\n\n"
-        f"Удалить: /remove_<категория>\n"
+        f"Удалить: /remove_&lt;категория&gt;\n"
         f"Пример: /add_tech /remove_sports",
         parse_mode='HTML'
     )
