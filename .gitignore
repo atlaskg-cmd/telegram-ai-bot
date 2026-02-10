@@ -1,24 +1,26 @@
-# Virtual environment
-.venv/
-venv/
-env/
-
-# Python cache
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.env
 
 # IDE
 .vscode/
 .idea/
-
-# OS
-.DS_Store
-Thumbs.db
+*.swp
+*.swo
 
 # Logs
 *.log
 
-# Config files with API keys
-config.json
+# Local config (не пушим секреты!)
+config.local.json
+
+# Temp files
+*.tmp
+*.temp
