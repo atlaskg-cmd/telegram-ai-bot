@@ -1,5 +1,7 @@
 """
-AI Image Generation using DALL-E via OpenRouter
+AI Image Generation using Free Models via OpenRouter
+- ByteDance Seedream 4.5 (free) for images
+- DeepSeek R1 (free) for advanced chat
 """
 
 import os
@@ -31,7 +33,7 @@ class ImageGenerator:
             }
             
             data = {
-                "model": "openai/dall-e-3",
+                "model": "bytedance/seedream-4.5:free",
                 "prompt": prompt,
                 "n": 1,
                 "size": size,
@@ -110,8 +112,8 @@ class ImageGenerator:
             return None
 
 
-class GPT4Chat:
-    """GPT-4 Turbo via OpenRouter for advanced chat"""
+class DeepSeekChat:
+    """DeepSeek R1 (free) via OpenRouter for advanced chat"""
     
     def __init__(self):
         self.api_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -132,13 +134,13 @@ class GPT4Chat:
             }
             
             data = {
-                "model": "openai/gpt-4-turbo-preview",  # GPT-4 Turbo
+                "model": "deepseek/deepseek-r1-0528:free",  # DeepSeek R1 Free
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "temperature": 0.7
             }
             
-            logging.info(f"Sending request to GPT-4 Turbo")
+            logging.info(f"Sending request to DeepSeek R1 (free)")
             
             response = requests.post(
                 self.api_url,
@@ -161,7 +163,7 @@ class GPT4Chat:
                 return f"❌ Ошибка API: {response.status_code}"
                 
         except Exception as e:
-            logging.error(f"Error in GPT-4 chat: {e}")
+            logging.error(f"Error in DeepSeek chat: {e}")
             return f"❌ Ошибка: {e}"
     
     def simple_chat(self, user_message: str) -> str:
