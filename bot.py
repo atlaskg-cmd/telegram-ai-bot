@@ -659,6 +659,67 @@ async def handle_text(message: types.Message):
         await message.reply('Найденные контакты:\n' + '\n'.join(lines))
         return
     
+    # ===== MENU BUTTONS - Check first and reset any states =====
+    menu_buttons = {
+        'Погода Бишкек': 'weather_bishkek',
+        'Погода Москва': 'weather_moscow',
+        'Погода Иссык-Куль': 'weather_issykkul',
+        'Погода Боконбаево': 'weather_bokonbaevo',
+        'Погода Тон': 'weather_ton',
+        'Курс валют': 'currency',
+        'Новости': 'news_kyrgyzstan',
+        'Контакты': 'contacts',
+        'Переключить голос': 'toggle_voice',
+        'Голосовой ответ': 'voice_help',
+        '🎨 Сгенерировать картинку': 'image_menu',
+        '📰 AI Дайджест': 'digest',
+        '👤 Админ': 'admin'
+    }
+    
+    # If user clicked any menu button - reset states and handle the button
+    if user_input in menu_buttons:
+        # Reset all user states (cancel any pending operations)
+        if user_id in user_states:
+            had_state = bool(user_states[user_id])
+            user_states.pop(user_id, None)
+            if had_state:
+                await message.reply("❌ Предыдущая операция отменена.")
+        
+        # Handle the menu button
+        if user_input == 'Погода Бишкек':
+            await weather_bishkek(message)
+        elif user_input == 'Погода Москва':
+            await weather_moscow(message)
+        elif user_input == 'Погода Иссык-Куль':
+            await weather_issykkul(message)
+        elif user_input == 'Погода Боконбаево':
+            await weather_bokonbaevo(message)
+        elif user_input == 'Погода Тон':
+            await weather_ton(message)
+        elif user_input == 'Курс валют':
+            await currency(message)
+        elif user_input == 'Новости':
+            await news_kyrgyzstan(message)
+        elif user_input == 'Переключить голос':
+            await toggle_voice(message)
+        elif user_input == 'Голосовой ответ':
+            await message.reply("Чтобы получить голосовой ответ, используйте: /voice &lt;ваш вопрос&gt;")
+        elif user_input == 'Контакты':
+            await show_all_contacts(message)
+        elif user_input == '🎨 Сгенерировать картинку':
+            user_states[user_id] = {'awaiting_image_prompt': True}
+            await message.reply("🎨 Опишите, какую картинку хотите сгенерировать:\n\nНапример: «кот в космосе, цифровое искусство»")
+        elif user_input == '📰 AI Дайджест':
+            await get_digest(message)
+        elif user_input == '👤 Админ':
+            if is_admin(user_id):
+                await admin_panel(message)
+            else:
+                await message.reply("❌ У вас нет доступа к админ-панели.")
+        return
+    
+    # ===== STATES - Only check if not a menu button =====
+    
     # If the user is adding a contact
     if user_states.get(user_id, {}).get('awaiting_contact_name'):
         user_states[user_id]['contact_name'] = user_input.strip()
@@ -715,55 +776,10 @@ async def handle_text(message: types.Message):
             await status_msg.edit_text(f"❌ Ошибка при генерации: {e}")
         return
 
-    # Route friendly keyboard labels to command handlers
+    # Route friendly keyboard labels to command handlers (fallback)
     if user_input == 'Погода Бишкек':
         await weather_bishkek(message)
         return
-    if user_input == 'Погода Москва':
-        await weather_moscow(message)
-        return
-    if user_input == 'Погода Иссык-Куль':
-        await weather_issykkul(message)
-        return
-    if user_input == 'Погода Боконбаево':
-        await weather_bokonbaevo(message)
-        return
-    if user_input == 'Погода Тон':
-        await weather_ton(message)
-        return
-    if user_input == 'Курс валют':
-        await currency(message)
-        return
-    if user_input == 'Новости':
-        await news_kyrgyzstan(message)
-        return
-    if user_input == 'Переключить голос':
-        await toggle_voice(message)
-        return
-    if user_input == 'Голосовой ответ':
-        await message.reply("Чтобы получить голосовой ответ, используйте: /voice &lt;ваш вопрос&gt;")
-        return
-    if user_input == 'Контакты':
-        # Show full contacts list as inline buttons
-        await show_all_contacts(message)
-        return
-    if user_input == '🎨 Сгенерировать картинку':
-        # Set state to wait for image prompt
-        user_states[user_id] = {'awaiting_image_prompt': True}
-        await message.reply("🎨 Опишите, какую картинку хотите сгенерировать:\n\nНапример: «кот в космосе, цифровое искусство»")
-        return
-    if user_input == '📰 AI Дайджест':
-        # Show personalized news digest
-        await get_digest(message)
-        return
-    if user_input == '👤 Админ':
-        # Check if user is admin
-        if is_admin(user_id):
-            await admin_panel(message)
-        else:
-            await message.reply("❌ У вас нет доступа к админ-панели.")
-        return
-
     # Save user message to database
     db.add_message(user_id, 'user', user_input)
 
