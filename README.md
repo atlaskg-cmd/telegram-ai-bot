@@ -1,6 +1,6 @@
 # Telegram AI Bot
 
-Version: 1.5.0
+Version: 2.0.0
 
 This is a Telegram bot that uses AI to answer user questions via OpenRouter API, and provides weather, currency information, news, and contacts.
 
@@ -42,12 +42,21 @@ This is a Telegram bot that uses AI to answer user questions via OpenRouter API,
 - /voice [question]: Get voice response for a question.
 - **Edge-TTS**: High-quality voice responses using Microsoft Edge voices (ru-RU-SvetlanaNeural).
 - **Voice Recognition**: Send voice messages and bot transcribes + responds (Whisper API).
+- **AI News Digest**: Personalized news from 20+ RSS sources with sentiment analysis.
 - **Admin Panel**: Statistics, broadcast messages, user info.
 - Contacts: View and search contacts with inline keyboard.
 - Reply keyboard for quick access to commands.
 - Password protection for bot access.
 
 ## Changelog
+
+### Version 2.0.0 - AI News Digest
+- **Added:** News aggregator with 20+ RSS sources (Tech, AI, Science, Space, Finance, Kyrgyzstan, World, Sports).
+- **Added:** AI sentiment analysis for each news (positive/negative/neutral).
+- **Added:** Personalized news feeds - users choose interests.
+- **Added:** Scheduled digest delivery every day.
+- **Added:** Commands: `/interests`, `/digest`, `/schedule`.
+- **Added:** Admin commands: `/collect_news`, `/news_stats`.
 
 ### Version 1.5.0
 - **Added:** Admin panel (`/admin`, `/broadcast`, `/user_info`) - only for admin.
