@@ -10,16 +10,20 @@ This is a Telegram bot that uses AI to answer user questions via OpenRouter API,
 2. Create a virtual environment: `python -m venv .venv`
 3. Activate it: `.venv\Scripts\activate` (Windows) or `source .venv/bin/activate` (Linux/Mac)
 4. Install dependencies: `pip install -r requirements.txt`
-5. Configure API keys:
-   - Copy `config.example.json` to `config.json`.
-   - Edit `config.json` and replace placeholder API keys with your actual keys:
-     - `openrouter_api_key`: Your OpenRouter API key.
-     - `weather_api_key`: Your OpenWeatherMap API key.
-   - Alternatively, set environment variables (they will override config.json):
+5. Configure API keys (choose one method):
+   
+   **For Railway (Production - Recommended):**
+   - Set environment variables in Railway Dashboard:
      - `TELEGRAM_API_TOKEN`: Your Telegram Bot API token from BotFather.
      - `OPENROUTER_API_KEY`: Your OpenRouter API key.
      - `WEATHER_API_KEY`: Your OpenWeatherMap API key.
-6. Run the bot: `python bot.py`
+   - These variables override config.json and are secure (not visible in GitHub).
+   
+   **For Local Development (not recommended for this bot):**
+   - Copy `config.example.json` to `config.json`.
+   - Edit `config.json` and replace placeholder API keys with your actual keys.
+
+6. Deploy to Railway: Push to GitHub, Railway auto-deploys.
 
 ## Features
 
