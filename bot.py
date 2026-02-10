@@ -10,6 +10,7 @@ import asyncio
 import requests
 from datetime import datetime, timedelta, timezone
 import xml.etree.ElementTree as ET
+from database import Database
 try:
     from gtts import gTTS
     import io
@@ -55,8 +56,11 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Dictionary to store conversation history and settings for each user
-user_histories = {}
+# Initialize database
+db = Database()
+
+# Dictionary for temporary states (password input, etc.)
+user_states = {}
 
 # Warn if OpenRouter key missing
 if not OPENROUTER_API_KEY:
@@ -74,44 +78,28 @@ main_keyboard = ReplyKeyboardMarkup(
     one_time_keyboard=False
 )
 
-# Simple contacts storage (edit this dict to add contacts)
-# Пример контактов — отредактируйте или добавьте свои записи
-contacts = {
-    "Иван Иванов": "+996700000001",
-    "Мария Петрова": "+996700000002",
-    "Алексей Смирнов": "+996700000003",
-    "Ольга Смирнова": "+996700000004",
-    "Сергей Кузнецов": "+996700000005",
-    "Бабушка Ада": "+996700000006",
-    "Дедушка Илья": "+996700000007",
-}
-
-
-def search_contacts(query):
-    """Search contacts by name or phone number."""
-    query = query.lower().strip()
-    results = []
-    for name, phone in contacts.items():
-        if query in name.lower() or query in phone.lower():
-            results.append((name, phone))
-    return results
-
-
 async def show_all_contacts(message: types.Message):
+    """Show all contacts from database"""
     user_id = message.from_user.id
-    if not contacts:
-        await message.reply('Список контактов пуст. Добавьте контакты в `contacts` в коде.')
+    contacts_list = db.get_all_contacts()
+    
+    if not contacts_list:
+        # Show keyboard with Add Contact button
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Добавить контакт", callback_data="contact:add")]
+        ])
+        await message.reply('Список контактов пуст. Добавьте первый контакт!', reply_markup=kb)
         return
+    
     rows = []
-    mapping = {}
-    for i, name in enumerate(contacts.keys()):
-        key = f'c{i}'
-        mapping[key] = name
-        rows.append([InlineKeyboardButton(text=name, callback_data=f'contact:{key}')])
+    for contact in contacts_list:
+        rows.append([InlineKeyboardButton(
+            text=contact['name'], 
+            callback_data=f"contact:{contact['id']}"
+        )])
+    
+    rows.append([InlineKeyboardButton(text="➕ Добавить контакт", callback_data="contact:add")])
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
-    if user_id not in user_histories:
-        user_histories[user_id] = {'history': [], 'voice_mode': False}
-    user_histories[user_id]['last_contacts_map'] = mapping
     await message.reply('Выберите контакт:', reply_markup=kb)
 
 
@@ -119,23 +107,42 @@ async def contact_callback_handler(callback: types.CallbackQuery):
     data = callback.data or ''
     user_id = callback.from_user.id
     await callback.answer()
+    
     if not is_authenticated(user_id):
         await callback.message.reply('Доступ закрыт. Пожалуйста, авторизуйтесь через /start.')
         return
+    
     if not data.startswith('contact:'):
         return
-    key = data.split(':', 1)[1]
-    if key == 'back':
+    
+    action = data.split(':', 1)[1]
+    
+    if action == 'add':
+        # Start adding contact process
+        user_states[user_id] = {'awaiting_contact_name': True}
+        await callback.message.reply('Введите имя контакта:')
+        return
+    
+    if action == 'back':
         await show_all_contacts(callback.message)
         return
-    mapping = user_histories.get(user_id, {}).get('last_contacts_map', {})
-    name = mapping.get(key)
-    if not name:
-        await callback.message.reply('Контакт не найден (возможно, истекла сессия).')
-        return
-    phone = contacts.get(name, 'Номер не задан')
-    back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Вернуться', callback_data='contact:back')]])
-    await callback.message.reply(f"{name}: {phone}", reply_markup=back_kb)
+    
+    # Show contact details
+    try:
+        contact_id = int(action)
+        contact = db.get_contact_by_id(contact_id)
+        if contact:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text='Вернуться', callback_data='contact:back')]
+            ])
+            await callback.message.reply(
+                f"👤 {contact['name']}\n📞 {contact['phone']}", 
+                reply_markup=kb
+            )
+        else:
+            await callback.message.reply('Контакт не найден.')
+    except ValueError:
+        await callback.message.reply('Ошибка: неверный ID контакта.')
 
 # Password protection
 AUTH_PASSWORD = "1916"
@@ -338,8 +345,18 @@ def get_news_kyrgyzstan():
 async def send_welcome(message: types.Message):
     logging.info(f"Получена команда /start от пользователя {message.from_user.id}")
     user_id = message.from_user.id
-    if user_id not in user_histories:
-        user_histories[user_id] = {'history': [], 'voice_mode': False}
+    
+    # Save user to database
+    db.add_or_update_user(
+        telegram_id=user_id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        last_name=message.from_user.last_name
+    )
+    
+    # Initialize user state if needed
+    if user_id not in user_states:
+        user_states[user_id] = {}
 
     # If already authenticated, show menu
     if is_authenticated(user_id):
@@ -354,6 +371,8 @@ async def send_welcome(message: types.Message):
             "💰 /currency - Курс валют\n"
             "📰 /news_kyrgyzstan - Новости Киргизстана за последние 3 дня\n"
             "🎤 /toggle_voice - Переключить голосовой режим\n"
+            "🗑 /clear_history - Очистить историю чата\n"
+            "📊 /stats - Моя статистика\n"
             + ("🎤 /voice [вопрос] - Ответ голосом\n" if TTS_AVAILABLE else "")
             + "💬 Просто напишите свой вопрос, и я отвечу!\n"
         )
@@ -361,7 +380,7 @@ async def send_welcome(message: types.Message):
         return
 
     # Not authenticated: ask for password
-    user_histories[user_id]['awaiting_password'] = True
+    user_states[user_id]['awaiting_password'] = True
     await message.reply('Бот приватный. Введите пароль:')
 
 # Handler for weather in Bishkek
@@ -459,11 +478,31 @@ async def toggle_voice(message: types.Message):
     user_id = message.from_user.id
     if not await ensure_auth(message):
         return
-    if user_id not in user_histories:
-        user_histories[user_id] = {'history': [], 'voice_mode': False}
-    user_histories[user_id]['voice_mode'] = not user_histories[user_id]['voice_mode']
-    status = "включен" if user_histories[user_id]['voice_mode'] else "выключен"
+    current_mode = db.get_voice_mode(user_id)
+    new_mode = not current_mode
+    db.set_voice_mode(user_id, new_mode)
+    status = "включен" if new_mode else "выключен"
     await message.reply(f"🎤 Голосовой режим {status}.")
+
+# Handler for clear history
+async def clear_history(message: types.Message):
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    db.clear_chat_history(user_id)
+    await message.reply("🗑 История чата очищена.")
+
+# Handler for user stats
+async def user_stats(message: types.Message):
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    stats = db.get_user_stats(user_id)
+    await message.reply(
+        f"📊 Ваша статистика:\n"
+        f"💬 Сообщений: {stats['message_count']}\n"
+        f"👤 Контактов добавлено: {stats['contact_count']}"
+    )
 
 # Handler for text messages (questions)
 async def handle_text(message: types.Message):
@@ -478,11 +517,11 @@ async def handle_text(message: types.Message):
         user_histories[user_id] = {'history': [], 'voice_mode': False}
 
     # If awaiting password, treat message as password attempt
-    if user_histories[user_id].get('awaiting_password'):
+    if user_states.get(user_id, {}).get('awaiting_password'):
         pw = user_input.strip()
         if pw == AUTH_PASSWORD:
             authenticated_users.add(user_id)
-            user_histories[user_id]['awaiting_password'] = False
+            user_states[user_id]['awaiting_password'] = False
             await message.reply('Авторизация успешна.')
             # send menu
             menu = (
@@ -496,6 +535,8 @@ async def handle_text(message: types.Message):
                 "💰 /currency - Курс валют\n"
                 "📰 /news_kyrgyzstan - Новости Киргизстана за последние 3 дня\n"
                 "🎤 /toggle_voice - Переключить голосовой режим\n"
+                "🗑 /clear_history - Очистить историю чата\n"
+                "📊 /stats - Моя статистика\n"
                 + ("🎤 /voice [вопрос] - Ответ голосом\n" if TTS_AVAILABLE else "")
                 + "💬 Просто напишите свой вопрос, и я отвечу!\n"
             )
@@ -505,18 +546,40 @@ async def handle_text(message: types.Message):
         return
 
     # If the user is in contact-search mode, treat this message as the query
-    if user_histories[user_id].get('awaiting_contact_query'):
+    if user_states.get(user_id, {}).get('awaiting_contact_query'):
         query = user_input.strip()
-        user_histories[user_id]['awaiting_contact_query'] = False
+        user_states[user_id]['awaiting_contact_query'] = False
         if not query:
             await message.reply('Пожалуйста, введите имя или номер для поиска контакта.')
             return
-        results = search_contacts(query)
+        results = db.search_contacts(query)
         if not results:
             await message.reply('Контакты не найдены.')
             return
-        lines = [f"{i+1}. {name}: {phone}" for i, (name, phone) in enumerate(results)]
+        lines = [f"{i+1}. {c['name']}: {c['phone']}" for i, c in enumerate(results)]
         await message.reply('Найденные контакты:\n' + '\n'.join(lines))
+        return
+    
+    # If the user is adding a contact
+    if user_states.get(user_id, {}).get('awaiting_contact_name'):
+        user_states[user_id]['contact_name'] = user_input.strip()
+        user_states[user_id]['awaiting_contact_name'] = False
+        user_states[user_id]['awaiting_contact_phone'] = True
+        await message.reply('Теперь введите номер телефона:')
+        return
+    
+    if user_states.get(user_id, {}).get('awaiting_contact_phone'):
+        phone = user_input.strip()
+        name = user_states[user_id].get('contact_name', '')
+        if name and phone:
+            if db.add_contact(name, phone, user_id):
+                await message.reply(f'✅ Контакт добавлен:\n{name}: {phone}')
+            else:
+                await message.reply('❌ Ошибка при добавлении контакта.')
+        else:
+            await message.reply('❌ Ошибка: неполные данные.')
+        user_states[user_id].pop('contact_name', None)
+        user_states[user_id].pop('awaiting_contact_phone', None)
         return
 
     # Route friendly keyboard labels to command handlers
@@ -552,19 +615,20 @@ async def handle_text(message: types.Message):
         await show_all_contacts(message)
         return
 
-    # Add user message to history
-    user_histories[user_id]['history'].append({"role": "user", "content": user_input})
+    # Save user message to database
+    db.add_message(user_id, 'user', user_input)
 
-    # Limit history to last 20 messages to avoid exceeding limits
-    if len(user_histories[user_id]['history']) > 20:
-        user_histories[user_id]['history'] = user_histories[user_id]['history'][-20:]
+    # Get chat history from database (last 20 messages)
+    history = db.get_chat_history(user_id, limit=20)
 
     await message.reply("🤖 Обрабатываю ваш вопрос...")
-    response = await query_deepseek(user_histories[user_id]['history'])
+    response = await query_deepseek(history)
     # Limit response length for TTS to avoid issues
     voice_text = response[:2000] if len(response) > 2000 else response
-    if user_histories[user_id]['voice_mode']:
-        if TTS_AVAILABLE:
+    voice_mode = db.get_voice_mode(user_id)
+    
+    if voice_mode:
+        if TTS_AVAILABLE or EDGE_TTS_AVAILABLE:
             voice_file = await generate_voice(voice_text)
             logging.info(f"Voice file получен: {voice_file is not None}")
             if voice_file:
@@ -587,8 +651,8 @@ async def handle_text(message: types.Message):
     else:
         await message.reply(f"🤖 {response}")
 
-    # Add assistant response to history
-    user_histories[user_id]['history'].append({"role": "assistant", "content": response})
+    # Save assistant response to database
+    db.add_message(user_id, 'assistant', response)
 
 async def main():
     dp.message.register(send_welcome, Command(commands=['start']))
@@ -601,6 +665,8 @@ async def main():
     dp.message.register(news_kyrgyzstan, Command(commands=['news_kyrgyzstan']))
     dp.message.register(voice_handler, Command(commands=['voice']))
     dp.message.register(toggle_voice, Command(commands=['toggle_voice']))
+    dp.message.register(clear_history, Command(commands=['clear_history']))
+    dp.message.register(user_stats, Command(commands=['stats']))
     dp.message.register(handle_text)
     dp.callback_query.register(contact_callback_handler)
     logging.info("Бот запущен и готов к обработке сообщений.")
