@@ -92,7 +92,8 @@ main_keyboard = ReplyKeyboardMarkup(
         [KeyboardButton(text='Погода Бишкек'), KeyboardButton(text='Погода Москва')],
         [KeyboardButton(text='Погода Иссык-Куль'), KeyboardButton(text='Погода Боконбаево'), KeyboardButton(text='Погода Тон')],
         [KeyboardButton(text='Курс валют'), KeyboardButton(text='Новости'), KeyboardButton(text='Контакты')],
-        [KeyboardButton(text='Переключить голос'), KeyboardButton(text='Голосовой ответ')]
+        [KeyboardButton(text='🎨 Сгенерировать картинку'), KeyboardButton(text='📰 AI Дайджест')],
+        [KeyboardButton(text='Переключить голос'), KeyboardButton(text='Голосовой ответ'), KeyboardButton(text='👤 Админ')]
     ],
     resize_keyboard=True,
     one_time_keyboard=False
@@ -679,6 +680,40 @@ async def handle_text(message: types.Message):
         user_states[user_id].pop('contact_name', None)
         user_states[user_id].pop('awaiting_contact_phone', None)
         return
+    
+    # If the user is generating an image
+    if user_states.get(user_id, {}).get('awaiting_image_prompt'):
+        prompt = user_input.strip()
+        if not prompt:
+            await message.reply("❌ Пожалуйста, введите описание для картинки.")
+            return
+        
+        user_states[user_id].pop('awaiting_image_prompt', None)
+        
+        # Show generating message
+        status_msg = await message.reply("🎨 Генерирую изображение... Это может занять 10-30 секунд.")
+        
+        try:
+            # Generate image
+            image_path = await asyncio.to_thread(image_gen.generate_image, prompt)
+            
+            if image_path:
+                # Send image
+                photo = FSInputFile(image_path)
+                await message.reply_photo(photo, caption=f"🎨 «{prompt[:50]}{'...' if len(prompt) > 50 else ''}»")
+                await status_msg.delete()
+                
+                # Clean up temp file
+                try:
+                    os.remove(image_path)
+                except:
+                    pass
+            else:
+                await status_msg.edit_text("❌ Не удалось сгенерировать изображение. Попробуйте другой запрос.")
+        except Exception as e:
+            logging.error(f"Error generating image: {e}")
+            await status_msg.edit_text(f"❌ Ошибка при генерации: {e}")
+        return
 
     # Route friendly keyboard labels to command handlers
     if user_input == 'Погода Бишкек':
@@ -711,6 +746,22 @@ async def handle_text(message: types.Message):
     if user_input == 'Контакты':
         # Show full contacts list as inline buttons
         await show_all_contacts(message)
+        return
+    if user_input == '🎨 Сгенерировать картинку':
+        # Set state to wait for image prompt
+        user_states[user_id] = {'awaiting_image_prompt': True}
+        await message.reply("🎨 Опишите, какую картинку хотите сгенерировать:\n\nНапример: «кот в космосе, цифровое искусство»")
+        return
+    if user_input == '📰 AI Дайджест':
+        # Show personalized news digest
+        await get_digest(message)
+        return
+    if user_input == '👤 Админ':
+        # Check if user is admin
+        if is_admin(user_id):
+            await admin_panel(message)
+        else:
+            await message.reply("❌ У вас нет доступа к админ-панели.")
         return
 
     # Save user message to database
