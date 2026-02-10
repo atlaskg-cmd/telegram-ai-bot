@@ -885,7 +885,7 @@ async def user_info(message: types.Message):
     
     with db.get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (user_id,))
+        db._execute(cursor, 'SELECT * FROM users WHERE telegram_id = ?', (user_id,))
         user = cursor.fetchone()
         
         if not user:
