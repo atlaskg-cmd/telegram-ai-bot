@@ -63,6 +63,13 @@ class Database:
             conn.row_factory = sqlite3.Row
             return conn
     
+    def _execute(self, cursor, query: str, params: tuple = ()):
+        """Execute query with automatic ? to %s conversion for PostgreSQL"""
+        if self.use_postgres:
+            # Convert ? to %s for PostgreSQL
+            query = query.replace('?', '%s')
+        cursor.execute(query, params)
+    
     def init_db(self):
         """Initialize database tables"""
         try:
@@ -316,7 +323,7 @@ class Database:
         """Add message to chat history"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            self._execute(cursor, '''
                 INSERT INTO chat_history (user_id, role, content)
                 VALUES (?, ?, ?)
             ''', (user_id, role, content))
@@ -326,7 +333,7 @@ class Database:
         """Get recent chat history for user"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            self._execute(cursor, '''
                 SELECT role, content FROM chat_history
                 WHERE user_id = ?
                 ORDER BY timestamp DESC
@@ -342,7 +349,7 @@ class Database:
         """Clear chat history for user"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM chat_history WHERE user_id = ?', (user_id,))
+            self._execute(cursor, 'DELETE FROM chat_history WHERE user_id = ?', (user_id,))
             conn.commit()
     
     # ========== CONTACTS ==========
@@ -352,7 +359,7 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
+                self._execute(cursor, '''
                     INSERT INTO contacts (name, phone, added_by)
                     VALUES (?, ?, ?)
                 ''', (name, phone, added_by))
@@ -366,7 +373,7 @@ class Database:
         """Delete contact (only if added by this user)"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            self._execute(cursor, '''
                 DELETE FROM contacts WHERE id = ? AND added_by = ?
             ''', (contact_id, user_id))
             conn.commit()
@@ -410,7 +417,7 @@ class Database:
         """Get single contact by ID"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, phone FROM contacts WHERE id = ?', (contact_id,))
+            self._execute(cursor, 'SELECT id, name, phone FROM contacts WHERE id = ?', (contact_id,))
             row = cursor.fetchone()
             if row:
                 if self.use_postgres:
@@ -425,7 +432,7 @@ class Database:
         """Get voice mode setting"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT voice_mode FROM user_settings WHERE user_id = ?', (user_id,))
+            self._execute(cursor, 'SELECT voice_mode FROM user_settings WHERE user_id = ?', (user_id,))
             row = cursor.fetchone()
             if row:
                 return bool(row[0] if self.use_postgres else row["voice_mode"])
@@ -458,10 +465,10 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
-            cursor.execute('SELECT COUNT(*) FROM chat_history WHERE user_id = ?', (user_id,))
+            self._execute(cursor, 'SELECT COUNT(*) FROM chat_history WHERE user_id = ?', (user_id,))
             message_count = cursor.fetchone()[0]
             
-            cursor.execute('SELECT COUNT(*) FROM contacts WHERE added_by = ?', (user_id,))
+            self._execute(cursor, 'SELECT COUNT(*) FROM contacts WHERE added_by = ?', (user_id,))
             contact_count = cursor.fetchone()[0]
             
             return {
