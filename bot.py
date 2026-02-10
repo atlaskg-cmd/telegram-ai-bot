@@ -571,4 +571,9 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Запускаем только на Railway (проверяем переменную окружения Railway)
+    if os.environ.get('RAILWAY_ENVIRONMENT'):
+        asyncio.run(main())
+    else:
+        logging.warning("Бот не запущен: запуск разрешён только на Railway (переменная RAILWAY_ENVIRONMENT не найдена).")
+        print("[STOP] Bot stopped locally. Deploy to Railway to run.")
