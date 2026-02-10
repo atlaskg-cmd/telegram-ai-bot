@@ -4,3 +4,4 @@ gtts
 aiohttp
 edge-tts
 feedparser
+psycopg2-binary

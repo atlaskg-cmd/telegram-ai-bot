@@ -32,9 +32,26 @@ git push origin main
 ### 3. Railway настройки
 - **Auto Deploy**: ВКЛЮЧЕН (деплой после каждого push)
 - **Start Command**: `python bot.py`
-- **Переменные окружения**: TELEGRAM_API_TOKEN, OPENROUTER_API_KEY, WEATHER_API_KEY
+- **Переменные окружения**: 
+  - `TELEGRAM_API_TOKEN` - токен бота от BotFather
+  - `OPENROUTER_API_KEY` - API ключ OpenRouter
+  - `WEATHER_API_KEY` - ключ OpenWeatherMap
+  - `ADMIN_ID` - твой Telegram ID для админ-панели
 
-### 4. Проверка ошибок
+### 4. Database (PostgreSQL) - ВАЖНО!
+Бот поддерживает две базы данных:
+- **SQLite** (`bot.db`) - локально, НЕ сохраняется при деплое!
+- **PostgreSQL** - на Railway, данные сохраняются навсегда
+
+#### Настройка PostgreSQL на Railway:
+1. В Railway Dashboard нажми **"New"** → **"Database"** → **"Add PostgreSQL"**
+2. Railway автоматически создаст переменную `DATABASE_URL`
+3. Бот автоматически подключится к PostgreSQL (при наличии `DATABASE_URL`)
+4. **ВСЕ ДАННЫЕ (контакты, настройки, история) будут сохраняться после деплоя!**
+
+> ⚠️ Без PostgreSQL: контакты и настройки сбрасываются после каждого push!
+
+### 5. Проверка ошибок
 ```bash
 # Логи Railway (через CLI)
 railway logs -f
@@ -45,6 +62,7 @@ railway logs -f
 
 ## Структура проекта
 - `bot.py` — основной код бота
+- `database.py` — база данных (SQLite/PostgreSQL)
 - `config.json` — локальная конфигурация
 - `requirements.txt` — зависимости
 - `railway.json` — настройки Railway
@@ -58,3 +76,4 @@ railway logs -f
 - Бот работает ТОЛЬКО на Railway
 - Локальный запуск запрещён (чтобы не было конфликта токенов)
 - После изменений обязательно `git push origin main`
+- Для сохранения данных настрой PostgreSQL (см. пункт 4)
