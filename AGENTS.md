@@ -37,6 +37,9 @@ git push origin main
   - `OPENROUTER_API_KEY` - API ключ OpenRouter
   - `WEATHER_API_KEY` - ключ OpenWeatherMap
   - `ADMIN_ID` - твой Telegram ID для админ-панели
+  - `CF_API_TOKEN` - Cloudflare API Token (для генерации изображений)
+  - `CF_ACCOUNT_ID` - Cloudflare Account ID (для генерации изображений)
+  - `DATABASE_URL` - автоматически создаётся при добавлении PostgreSQL
 
 ### 4. Database (PostgreSQL) - ВАЖНО!
 Бот поддерживает две базы данных:

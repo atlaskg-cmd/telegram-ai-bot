@@ -1,6 +1,7 @@
 """
-AI Image Generation using Pollinations.ai (free, no API key needed)
-And DeepSeek R1 via OpenRouter (free) for advanced chat
+AI Image Generation using Cloudflare Workers AI (free tier: 10k requests/day)
+Fallback to Pollinations.ai if Cloudflare not configured
+DeepSeek R1 via OpenRouter (free) for advanced chat
 """
 
 import os
@@ -13,44 +14,104 @@ import asyncio
 
 
 class ImageGenerator:
-    """Free image generation using Pollinations.ai"""
+    """Image generation using Cloudflare Workers AI with fallback to Pollinations.ai"""
     
     def __init__(self):
-        self.base_url = "https://image.pollinations.ai/prompt/"
+        # Cloudflare Workers AI settings
+        self.cf_api_token = os.environ.get("CF_API_TOKEN", "")
+        self.cf_account_id = os.environ.get("CF_ACCOUNT_ID", "")
+        self.cf_model = "@cf/stabilityai/stable-diffusion-xl-base-1.0"
+        self.cf_base_url = "https://api.cloudflare.com/client/v4/accounts"
+        
+        # Fallback to Pollinations.ai
+        self.pollinations_url = "https://image.pollinations.ai/prompt/"
+        
+        # Check which service is available
+        self.use_cloudflare = bool(self.cf_api_token and self.cf_account_id)
+        
+        if self.use_cloudflare:
+            logging.info("ImageGenerator: Using Cloudflare Workers AI")
+        else:
+            logging.info("ImageGenerator: Using Pollinations.ai (fallback)")
     
     def generate_image(self, prompt: str, width: int = 1024, height: int = 1024, seed: int = None) -> Optional[str]:
         """
-        Generate image using Pollinations.ai (completely free)
+        Generate image using Cloudflare Workers AI or fallback to Pollinations.ai
         Returns path to saved image file
         """
+        # Try Cloudflare first if configured
+        if self.use_cloudflare:
+            result = self._generate_cloudflare(prompt, width, height, seed)
+            if result:
+                return result
+            logging.warning("Cloudflare failed, trying Pollinations.ai fallback...")
+        
+        # Fallback to Pollinations.ai
+        return self._generate_pollinations(prompt, width, height, seed)
+    
+    def _generate_cloudflare(self, prompt: str, width: int = 1024, height: int = 1024, seed: int = None) -> Optional[str]:
+        """Generate image using Cloudflare Workers AI"""
         try:
-            # Encode prompt for URL
-            encoded_prompt = urllib.parse.quote(prompt)
+            url = f"{self.cf_base_url}/{self.cf_account_id}/ai/run/{self.cf_model}"
             
-            # Build URL with parameters
-            url = f"{self.base_url}{encoded_prompt}?width={width}&height={height}&nologo=true"
+            headers = {
+                "Authorization": f"Bearer {self.cf_api_token}",
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "prompt": prompt,
+                "width": width,
+                "height": height
+            }
+            
+            if seed:
+                data["seed"] = seed
+            
+            logging.info(f"Generating image with Cloudflare AI: {prompt[:50]}...")
+            
+            response = requests.post(url, headers=headers, json=data, timeout=120)
+            
+            if response.status_code == 200:
+                # Save binary image data to temp file
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+                temp_file.write(response.content)
+                temp_file.close()
+                logging.info(f"Image saved to {temp_file.name}")
+                return temp_file.name
+            else:
+                logging.error(f"Cloudflare AI error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logging.error(f"Error generating image with Cloudflare: {e}")
+            return None
+    
+    def _generate_pollinations(self, prompt: str, width: int = 1024, height: int = 1024, seed: int = None) -> Optional[str]:
+        """Generate image using Pollinations.ai (fallback)"""
+        try:
+            encoded_prompt = urllib.parse.quote(prompt)
+            url = f"{self.pollinations_url}{encoded_prompt}?width={width}&height={height}&nologo=true"
             
             if seed:
                 url += f"&seed={seed}"
             
             logging.info(f"Generating image with Pollinations.ai: {prompt[:50]}...")
             
-            # Download image
             response = requests.get(url, timeout=60)
             
             if response.status_code == 200:
-                # Save to temp file
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
                 temp_file.write(response.content)
                 temp_file.close()
                 logging.info(f"Image saved to {temp_file.name}")
                 return temp_file.name
             else:
-                logging.error(f"Image generation failed: {response.status_code}")
+                logging.error(f"Pollinations.ai error: {response.status_code}")
                 return None
                 
         except Exception as e:
-            logging.error(f"Error generating image: {e}")
+            logging.error(f"Error generating image with Pollinations: {e}")
             return None
 
 
