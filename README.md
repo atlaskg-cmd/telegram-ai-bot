@@ -1,6 +1,6 @@
 # Telegram AI Bot
 
-Version: 1.3.0
+Version: 1.4.0
 
 This is a Telegram bot that uses AI to answer user questions via OpenRouter API, and provides weather, currency information, news, and contacts.
 
@@ -34,11 +34,17 @@ This is a Telegram bot that uses AI to answer user questions via OpenRouter API,
 - /news_kyrgyzstan: Get latest news from Kyrgyzstan (last 3 days).
 - /toggle_voice: Toggle voice response mode.
 - /voice [question]: Get voice response for a question.
+- **Edge-TTS**: High-quality voice responses using Microsoft Edge voices (ru-RU-SvetlanaNeural).
 - Contacts: View and search contacts with inline keyboard.
 - Reply keyboard for quick access to commands.
 - Password protection for bot access.
 
 ## Changelog
+
+### Version 1.4.0
+- **Added:** Edge-TTS integration - high-quality voice synthesis using Microsoft Edge voices.
+- **Changed:** Voice responses now use `ru-RU-SvetlanaNeural` (female) by default for more natural sound.
+- **Changed:** Fallback to gTTS if Edge-TTS is unavailable.
 
 ### Version 1.3.0
 - **Changed:** Updated AI model to `arcee-ai/trinity-large-preview:free` (free model).
