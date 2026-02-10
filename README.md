@@ -1,6 +1,6 @@
 # Telegram AI Bot
 
-Version: 1.4.0
+Version: 1.5.0
 
 This is a Telegram bot that uses AI to answer user questions via OpenRouter API, and provides weather, currency information, news, and contacts.
 
@@ -17,7 +17,9 @@ This is a Telegram bot that uses AI to answer user questions via OpenRouter API,
      - `TELEGRAM_API_TOKEN`: Your Telegram Bot API token from BotFather.
      - `OPENROUTER_API_KEY`: Your OpenRouter API key.
      - `WEATHER_API_KEY`: Your OpenWeatherMap API key.
+     - `ADMIN_ID`: Your Telegram numeric ID (for admin panel access).
    - These variables override config.json and are secure (not visible in GitHub).
+   - Get your Telegram ID: message `@userinfobot` on Telegram.
    
    **For Local Development (not recommended for this bot):**
    - Copy `config.example.json` to `config.json`.
@@ -39,11 +41,18 @@ This is a Telegram bot that uses AI to answer user questions via OpenRouter API,
 - /toggle_voice: Toggle voice response mode.
 - /voice [question]: Get voice response for a question.
 - **Edge-TTS**: High-quality voice responses using Microsoft Edge voices (ru-RU-SvetlanaNeural).
+- **Voice Recognition**: Send voice messages and bot transcribes + responds (Whisper API).
+- **Admin Panel**: Statistics, broadcast messages, user info.
 - Contacts: View and search contacts with inline keyboard.
 - Reply keyboard for quick access to commands.
 - Password protection for bot access.
 
 ## Changelog
+
+### Version 1.5.0
+- **Added:** Admin panel (`/admin`, `/broadcast`, `/user_info`) - only for admin.
+- **Added:** Voice recognition - transcribe voice messages using Whisper API.
+- **Added:** Webhook support for production (automatic on Railway).
 
 ### Version 1.4.0
 - **Added:** Edge-TTS integration - high-quality voice synthesis using Microsoft Edge voices.
