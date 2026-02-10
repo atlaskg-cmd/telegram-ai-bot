@@ -1,10 +1,16 @@
 {
   "models": [
-    "xiaomi/mimo-v2-flash:free",
-    "microsoft/wizardlm-2-8x22b",
-    "anthropic/claude-3-haiku:beta"
+    "openrouter/free",
+    "deepseek/deepseek-r1-0528:free",
+    "arcee-ai/trinity-large-preview:free",
+    "tngtech/deepseek-tng-r1t2-chimera:free",
+    "stepfun/step-3.5-flash:free"
   ],
-  "default_model": "arcee-ai/trinity-large-preview:free",
+  "default_model": "openrouter/free",
+  "fallback_models": [
+    "deepseek/deepseek-r1-0528:free",
+    "arcee-ai/trinity-large-preview:free"
+  ],
   "max_tokens_base": 100,
   "max_tokens_scale_factor": 0.5,
   "retry_attempts": 3,

@@ -178,37 +178,84 @@ async def ensure_auth(message: types.Message) -> bool:
     await message.reply('Доступ закрыт. Отправьте /start и введите пароль.')
     return False
 
-# Function to query OpenRouter API (sync)
+# Function to query OpenRouter API (sync) with fallback models
 def query_deepseek_sync(messages):
     if not OPENROUTER_API_KEY:
         return "OPENROUTER_API_KEY не установлен. Установите переменную окружения OPENROUTER_API_KEY."
-    logging.info(f"Отправка запроса к OpenRouter API с историей: {messages}")
+    
+    # List of models to try (with fallback)
+    models_to_try = [
+        config.get("default_model", "openrouter/free"),
+        "deepseek/deepseek-r1-0528:free",
+        "arcee-ai/trinity-large-preview:free",
+        "tngtech/deepseek-tng-r1t2-chimera:free",
+        "stepfun/step-3.5-flash:free",
+        "google/gemini-2.5-flash-lite"
+    ]
+    
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
-    data = {
-        "model": config.get("default_model", "google/gemini-2.5-flash-lite"),
-        "messages": messages,
-        "max_tokens": 1000
-    }
-    try:
-        response = requests.post(OPENROUTER_API_URL, headers=headers, json=data)
-        if response.status_code == 401:
-            logging.error("Ошибка 401: Неверный токен авторизации для OpenRouter API.")
-            return "Ошибка 401: Неверный токен авторизации. Проверьте OPENROUTER_API_KEY."
-        if response.status_code == 400:
-            logging.error(f"Ошибка 400: {response.text}")
-            return f"Ошибка 400: Неверный запрос. Проверьте модель и параметры."
-        response.raise_for_status()
-        result = response.json()
-        # Extract the message content from the response
-        if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"]
-        return "Ошибка: пустой ответ от API."
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Ошибка при запросе к OpenRouter API: {e}")
-        return f"Ошибка при запросе: {e}"
+    
+    last_error = None
+    
+    for model in models_to_try:
+        try:
+            logging.info(f"[OpenRouter] Попытка использовать модель: {model}")
+            
+            data = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": 1000
+            }
+            
+            response = requests.post(OPENROUTER_API_URL, headers=headers, json=data, timeout=60)
+            
+            # Handle rate limiting
+            if response.status_code == 429:
+                logging.warning(f"[OpenRouter] Модель {model} достигла лимита (429), пробуем следующую...")
+                continue
+            
+            # Handle auth error
+            if response.status_code == 401:
+                logging.error("Ошибка 401: Неверный токен авторизации для OpenRouter API.")
+                return "❌ Ошибка 401: Неверный токен авторизации. Проверьте OPENROUTER_API_KEY."
+            
+            # Handle bad request
+            if response.status_code == 400:
+                logging.warning(f"[OpenRouter] Модель {model} вернула 400, пробуем следующую...")
+                continue
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            # Extract the message content from the response
+            if "choices" in result and len(result["choices"]) > 0:
+                content = result["choices"][0]["message"]["content"]
+                logging.info(f"[OpenRouter] Успешно использована модель: {model}")
+                return content
+            
+            logging.warning(f"[OpenRouter] Модель {model} вернула пустой ответ, пробуем следующую...")
+            
+        except requests.exceptions.Timeout:
+            logging.warning(f"[OpenRouter] Таймаут модели {model}, пробуем следующую...")
+            last_error = "Таймаут"
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"[OpenRouter] Ошибка модели {model}: {e}")
+            last_error = str(e)
+            continue
+    
+    # All models failed
+    error_msg = f"❌ Все модели недоступны. Последняя ошибка: {last_error}\n\n"
+    error_msg += "💡 Причины:\n"
+    error_msg += "• Достигнут дневной лимит free моделей (200 запросов/день)\n"
+    error_msg += "• Высокая нагрузка на серверы\n"
+    error_msg += "• Модели временно недоступны\n\n"
+    error_msg += "⏰ Попробуйте позже или завтра."
+    
+    logging.error(f"[OpenRouter] Все модели исчерпаны: {last_error}")
+    return error_msg
 
 # Async wrapper for query_deepseek
 async def query_deepseek(messages):
