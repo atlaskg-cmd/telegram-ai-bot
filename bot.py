@@ -17,6 +17,12 @@ try:
 except ImportError:
     TTS_AVAILABLE = False
 
+try:
+    import edge_tts
+    EDGE_TTS_AVAILABLE = True
+except ImportError:
+    EDGE_TTS_AVAILABLE = False
+
 # Function to clean text for TTS
 def clean_text_for_tts(text):
     # Remove emojis and special characters, keep only letters, numbers, and spaces
@@ -202,9 +208,39 @@ def generate_voice_sync(text, lang='ru'):
             pass
         return None
 
-# Async wrapper for generate_voice
+# Edge-TTS voice generation
+async def generate_voice_edge(text, voice="ru-RU-SvetlanaNeural"):
+    """
+    Generate voice using Edge-TTS (Microsoft Edge voices).
+    Russian voices: ru-RU-SvetlanaNeural (female), ru-RU-DmitryNeural (male)
+    """
+    if not EDGE_TTS_AVAILABLE:
+        return None
+    try:
+        # Limit text length
+        text = text[:3000]
+        communicate = edge_tts.Communicate(text, voice)
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+            await communicate.save(temp_file.name)
+            logging.info(f"Edge-TTS voice generated successfully with voice: {voice}")
+            return temp_file.name
+    except Exception as e:
+        logging.error(f"Ошибка Edge-TTS: {e}")
+        return None
+
+# Async wrapper for generate_voice (tries Edge-TTS first, falls back to gTTS)
 async def generate_voice(text, lang='ru'):
-    return await asyncio.to_thread(generate_voice_sync, text, lang)
+    # Try Edge-TTS first (better quality)
+    if EDGE_TTS_AVAILABLE:
+        voice_file = await generate_voice_edge(text)
+        if voice_file:
+            return voice_file
+    
+    # Fallback to gTTS if Edge-TTS failed or unavailable
+    if TTS_AVAILABLE:
+        return await asyncio.to_thread(generate_voice_sync, text, lang)
+    
+    return None
 
 # Function to get weather
 def get_weather(city):
