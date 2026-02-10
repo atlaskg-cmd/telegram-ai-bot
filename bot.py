@@ -548,12 +548,6 @@ async def handle_text(message: types.Message):
     user_input = message.text
     logging.info(f"Получен текст от пользователя {user_id}: {user_input}")
 
-    # (friendly keyboard routing moved below after history init)
-
-    # Initialize history and settings if not exists
-    if user_id not in user_histories:
-        user_histories[user_id] = {'history': [], 'voice_mode': False}
-
     # If awaiting password, treat message as password attempt
     if user_states.get(user_id, {}).get('awaiting_password'):
         pw = user_input.strip()
