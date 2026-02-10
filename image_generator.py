@@ -1,114 +1,56 @@
 """
-AI Image Generation using Free Models via OpenRouter
-- ByteDance Seedream 4.5 (free) for images
-- DeepSeek R1 (free) for advanced chat
+AI Image Generation using Pollinations.ai (free, no API key needed)
+And DeepSeek R1 via OpenRouter (free) for advanced chat
 """
 
 import os
 import requests
-import base64
+import urllib.parse
 import tempfile
 import logging
 from typing import Optional
+import asyncio
 
 
 class ImageGenerator:
-    def __init__(self):
-        self.api_key = os.environ.get("OPENROUTER_API_KEY", "")
-        self.api_url = "https://openrouter.ai/api/v1/images/generations"
+    """Free image generation using Pollinations.ai"""
     
-    def generate_image(self, prompt: str, size: str = "1024x1024", quality: str = "standard") -> Optional[str]:
+    def __init__(self):
+        self.base_url = "https://image.pollinations.ai/prompt/"
+    
+    def generate_image(self, prompt: str, width: int = 1024, height: int = 1024, seed: int = None) -> Optional[str]:
         """
-        Generate image using DALL-E via OpenRouter
+        Generate image using Pollinations.ai (completely free)
         Returns path to saved image file
         """
-        if not self.api_key:
-            logging.error("OPENROUTER_API_KEY not set")
-            return None
-        
         try:
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
+            # Encode prompt for URL
+            encoded_prompt = urllib.parse.quote(prompt)
             
-            data = {
-                "model": "bytedance/seedream-4.5:free",
-                "prompt": prompt,
-                "n": 1,
-                "size": size,
-                "quality": quality  # "standard" or "hd"
-            }
+            # Build URL with parameters
+            url = f"{self.base_url}{encoded_prompt}?width={width}&height={height}&nologo=true"
             
-            logging.info(f"Generating image for prompt: {prompt[:50]}...")
+            if seed:
+                url += f"&seed={seed}"
             
-            response = requests.post(
-                self.api_url,
-                headers=headers,
-                json=data,
-                timeout=60
-            )
+            logging.info(f"Generating image with Pollinations.ai: {prompt[:50]}...")
+            
+            # Download image
+            response = requests.get(url, timeout=60)
             
             if response.status_code == 200:
-                result = response.json()
-                
-                # DALL-E returns URL or base64
-                if "data" in result and len(result["data"]) > 0:
-                    image_data = result["data"][0]
-                    
-                    # If URL provided
-                    if "url" in image_data:
-                        return self._download_image(image_data["url"])
-                    
-                    # If base64 provided
-                    elif "b64_json" in image_data:
-                        return self._save_base64_image(image_data["b64_json"])
-                
-                logging.error(f"Unexpected response format: {result}")
-                return None
+                # Save to temp file
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
+                temp_file.write(response.content)
+                temp_file.close()
+                logging.info(f"Image saved to {temp_file.name}")
+                return temp_file.name
             else:
-                logging.error(f"Image generation failed: {response.status_code} - {response.text}")
+                logging.error(f"Image generation failed: {response.status_code}")
                 return None
                 
         except Exception as e:
             logging.error(f"Error generating image: {e}")
-            return None
-    
-    def _download_image(self, url: str) -> Optional[str]:
-        """Download image from URL and save to temp file"""
-        try:
-            response = requests.get(url, timeout=30)
-            if response.status_code == 200:
-                # Determine extension from content-type
-                content_type = response.headers.get('content-type', '')
-                if 'png' in content_type:
-                    ext = '.png'
-                elif 'jpeg' in content_type or 'jpg' in content_type:
-                    ext = '.jpg'
-                else:
-                    ext = '.png'
-                
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
-                temp_file.write(response.content)
-                temp_file.close()
-                return temp_file.name
-            else:
-                logging.error(f"Failed to download image: {response.status_code}")
-                return None
-        except Exception as e:
-            logging.error(f"Error downloading image: {e}")
-            return None
-    
-    def _save_base64_image(self, b64_data: str) -> Optional[str]:
-        """Save base64 encoded image to temp file"""
-        try:
-            image_bytes = base64.b64decode(b64_data)
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-            temp_file.write(image_bytes)
-            temp_file.close()
-            return temp_file.name
-        except Exception as e:
-            logging.error(f"Error saving base64 image: {e}")
             return None
 
 
@@ -121,7 +63,7 @@ class DeepSeekChat:
     
     def chat(self, messages: list, max_tokens: int = 2000) -> str:
         """
-        Chat with GPT-4 Turbo
+        Chat with DeepSeek R1 (free)
         messages: list of dicts with 'role' and 'content'
         """
         if not self.api_key:
@@ -159,7 +101,7 @@ class DeepSeekChat:
             elif response.status_code == 401:
                 return "❌ Ошибка авторизации. Проверьте API ключ."
             else:
-                logging.error(f"GPT-4 error: {response.status_code} - {response.text}")
+                logging.error(f"DeepSeek error: {response.status_code} - {response.text}")
                 return f"❌ Ошибка API: {response.status_code}"
                 
         except Exception as e:
