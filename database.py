@@ -67,6 +67,60 @@ class Database:
                 )
             ''')
             
+            # News articles table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS news_articles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    link TEXT UNIQUE NOT NULL,
+                    summary TEXT,
+                    category TEXT DEFAULT 'other',
+                    source_name TEXT,
+                    source_category TEXT,
+                    published TIMESTAMP,
+                    sentiment TEXT DEFAULT 'neutral',
+                    sentiment_score REAL DEFAULT 0.0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # User interests table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_interests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    category TEXT NOT NULL,
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+                    UNIQUE(user_id, category)
+                )
+            ''')
+            
+            # User news likes/dislikes for ML
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_news_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    news_id INTEGER,
+                    feedback INTEGER,  -- 1 = like, -1 = dislike, 0 = neutral
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+                    FOREIGN KEY (news_id) REFERENCES news_articles(id),
+                    UNIQUE(user_id, news_id)
+                )
+            ''')
+            
+            # Digest schedule table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS digest_schedules (
+                    user_id INTEGER PRIMARY KEY,
+                    enabled INTEGER DEFAULT 0,
+                    schedule_time TEXT DEFAULT '09:00',
+                    last_sent TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(telegram_id)
+                )
+            ''')
+            
             conn.commit()
             logging.info("Database initialized successfully")
     
@@ -281,3 +335,175 @@ class Database:
                 "total_messages": total_messages,
                 "active_today": active_today
             }
+    
+    # ========== NEWS FUNCTIONS ==========
+    
+    def save_news_item(self, item: Dict) -> bool:
+        """Save news article to database"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR IGNORE INTO news_articles 
+                    (title, link, summary, category, source_name, source_category, 
+                     published, sentiment, sentiment_score)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    item['title'], item['link'], item['summary'], 
+                    item['category'], item.get('source_name', ''),
+                    item.get('source_category', ''), item['published'],
+                    item.get('sentiment', 'neutral'), item.get('sentiment_score', 0.0)
+                ))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error saving news: {e}")
+            return False
+    
+    def get_news_by_categories(self, categories: List[str], limit: int = 10) -> List[Dict]:
+        """Get news by categories (last 3 days)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            placeholders = ','.join('?' for _ in categories)
+            cursor.execute(f'''
+                SELECT * FROM news_articles 
+                WHERE category IN ({placeholders})
+                AND date(published) >= date('now', '-3 days')
+                ORDER BY published DESC
+                LIMIT ?
+            ''', (*categories, limit))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_latest_news(self, limit: int = 20) -> List[Dict]:
+        """Get latest news regardless of category"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM news_articles 
+                WHERE date(published) >= date('now', '-3 days')
+                ORDER BY published DESC
+                LIMIT ?
+            ''', (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    # ========== USER INTERESTS ==========
+    
+    def add_user_interest(self, user_id: int, category: str) -> bool:
+        """Add interest category for user"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR IGNORE INTO user_interests (user_id, category)
+                    VALUES (?, ?)
+                ''', (user_id, category.lower()))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error adding interest: {e}")
+            return False
+    
+    def remove_user_interest(self, user_id: int, category: str) -> bool:
+        """Remove interest category for user"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                DELETE FROM user_interests WHERE user_id = ? AND category = ?
+            ''', (user_id, category.lower()))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_user_interests(self, user_id: int) -> List[str]:
+        """Get all interests for user"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT category FROM user_interests WHERE user_id = ?
+            ''', (user_id,))
+            return [row['category'] for row in cursor.fetchall()]
+    
+    def get_all_categories(self) -> List[str]:
+        """Get all available categories"""
+        return ['tech', 'ai', 'science', 'space', 'finance', 'kyrgyzstan', 'world', 'sports', 'other']
+    
+    # ========== NEWS FEEDBACK ==========
+    
+    def add_news_feedback(self, user_id: int, news_id: int, feedback: int):
+        """Add user feedback for news (1=like, -1=dislike)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO user_news_feedback (user_id, news_id, feedback)
+                VALUES (?, ?, ?)
+            ''', (user_id, news_id, feedback))
+            conn.commit()
+    
+    def get_user_feedback_stats(self, user_id: int) -> Dict:
+        """Get feedback statistics for user"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT feedback, COUNT(*) as count 
+                FROM user_news_feedback 
+                WHERE user_id = ?
+                GROUP BY feedback
+            ''', (user_id,))
+            stats = {row['feedback']: row['count'] for row in cursor.fetchall()}
+            return {
+                'likes': stats.get(1, 0),
+                'dislikes': stats.get(-1, 0),
+                'neutral': stats.get(0, 0)
+            }
+    
+    # ========== DIGEST SCHEDULE ==========
+    
+    def set_digest_schedule(self, user_id: int, enabled: bool, schedule_time: str = '09:00'):
+        """Set digest schedule for user"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO digest_schedules (user_id, enabled, schedule_time)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    schedule_time = excluded.schedule_time
+            ''', (user_id, 1 if enabled else 0, schedule_time))
+            conn.commit()
+    
+    def get_digest_schedule(self, user_id: int) -> Optional[Dict]:
+        """Get digest schedule for user"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM digest_schedules WHERE user_id = ?
+            ''', (user_id,))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'enabled': bool(row['enabled']),
+                    'schedule_time': row['schedule_time'],
+                    'last_sent': row['last_sent']
+                }
+            return None
+    
+    def get_users_for_digest(self, current_time: str) -> List[int]:
+        """Get users who should receive digest at current time"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT user_id FROM digest_schedules 
+                WHERE enabled = 1 
+                AND schedule_time = ?
+                AND (last_sent IS NULL OR date(last_sent) < date('now'))
+            ''', (current_time,))
+            return [row['user_id'] for row in cursor.fetchall()]
+    
+    def update_last_sent(self, user_id: int):
+        """Update last sent timestamp"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE digest_schedules SET last_sent = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            ''', (user_id,))
+            conn.commit()

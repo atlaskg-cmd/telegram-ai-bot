@@ -11,6 +11,9 @@ import requests
 from datetime import datetime, timedelta, timezone
 import xml.etree.ElementTree as ET
 from database import Database
+from news_scheduler import NewsScheduler, run_scheduler_once
+from news_aggregator import NewsAggregator
+
 try:
     from gtts import gTTS
     import io
@@ -400,19 +403,27 @@ async def send_welcome(message: types.Message):
     if is_authenticated(user_id):
         menu = (
             "🌟 Привет! Я ИИ-бот. 🤖\n"
-            "📋 Доступные команды:\n"
+            "📋 Доступные команды:\n\n"
+            "<b>🌤 Погода:</b>\n"
             "☀️ /weather_bishkek - Погода в Бишкеке\n"
             "❄️ /weather_moscow - Погода в Москве\n"
             "🏞️ /weather_issykkul - Погода в Иссык-Куле\n"
             "🏔️ /weather_bokonbaevo - Погода в Боконбаево\n"
-            "🌄 /weather_ton - Погода в Тоне\n"
-            "💰 /currency - Курс валют\n"
-            "📰 /news_kyrgyzstan - Новости Киргизстана за последние 3 дня\n"
+            "🌄 /weather_ton - Погода в Тоне\n\n"
+            "<b>💰 Финансы:</b>\n"
+            "💰 /currency - Курс валют\n\n"
+            "<b>📰 Новостной дайджест с AI:</b>\n"
+            "📋 /interests - Мои интересы\n"
+            "📰 /digest - Получить дайджест сейчас\n"
+            "📅 /schedule - Настроить расписание\n\n"
+            "<b>🎤 Голос:</b>\n"
             "🎤 /toggle_voice - Переключить голосовой режим\n"
+            + ("🎤 /voice [вопрос] - Ответ голосом\n" if TTS_AVAILABLE else "")
+            + "\n<b>⚙️ Другое:</b>\n"
             "🗑 /clear_history - Очистить историю чата\n"
             "📊 /stats - Моя статистика\n"
-            + ("🎤 /voice [вопрос] - Ответ голосом\n" if TTS_AVAILABLE else "")
-            + "💬 Просто напишите свой вопрос, и я отвечу!\n"
+            "📰 /news_kyrgyzstan - Новости Киргизстана (классика)\n\n"
+            "💬 Просто напишите свой вопрос, и я отвечу!"
         )
         await message.reply(menu, reply_markup=main_keyboard)
         return
@@ -828,7 +839,157 @@ async def handle_voice_message(message: types.Message):
         logging.error(f"Error handling voice: {e}")
         await message.reply("❌ Ошибка при обработке голосового сообщения.")
 
+# ========== NEWS DIGEST COMMANDS ==========
+
+async def show_interests(message: types.Message):
+    """Show and manage user interests"""
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    
+    interests = db.get_user_interests(user_id)
+    categories = db.get_all_categories()
+    
+    if not interests:
+        interests_text = "❌ Не выбрано"
+    else:
+        interests_text = ", ".join(f"✅ {c}" for c in interests)
+    
+    await message.reply(
+        f"📰 <b>Ваши интересы:</b>\n{interests_text}\n\n"
+        f"Доступные категории:\n" +
+        "\n".join([f"/add_{cat} - добавить {cat}" for cat in categories]) + "\n\n"
+        f"Удалить: /remove_<категория>\n"
+        f"Пример: /add_tech /remove_sports",
+        parse_mode='HTML'
+    )
+
+async def add_interest_handler(message: types.Message):
+    """Add interest from command like /add_tech"""
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    
+    # Extract category from command
+    command = message.text.split()[0].lower().replace('/', '').replace('add_', '')
+    
+    if db.add_user_interest(user_id, command):
+        await message.reply(f"✅ Добавлен интерес: {command}")
+    else:
+        await message.reply("❌ Не удалось добавить интерес")
+
+async def remove_interest_handler(message: types.Message):
+    """Remove interest from command like /remove_tech"""
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    
+    command = message.text.split()[0].lower().replace('/', '').replace('remove_', '')
+    
+    if db.remove_user_interest(user_id, command):
+        await message.reply(f"❌ Удалён интерес: {command}")
+    else:
+        await message.reply("❌ Не удалось удалить интерес или категория не найдена")
+
+async def get_digest(message: types.Message):
+    """Get news digest immediately"""
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    
+    scheduler = NewsScheduler(bot, db)
+    result = await scheduler.send_digest_now(user_id)
+    await scheduler.aggregator.close_session()
+    
+    if not result.startswith("✅"):
+        await message.reply(result)
+
+async def schedule_digest(message: types.Message):
+    """Set digest schedule"""
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    
+    args = message.text.split()
+    if len(args) < 2:
+        await message.reply(
+            "📅 <b>Настройка расписания</b>\n\n"
+            "Использование:\n"
+            "/schedule 09:00 - включить на 9:00 утра\n"
+            "/schedule off - отключить\n\n"
+            "Дайджест будет приходить каждый день в указанное время.",
+            parse_mode='HTML'
+        )
+        return
+    
+    time_arg = args[1].lower()
+    
+    if time_arg == 'off':
+        db.set_digest_schedule(user_id, False)
+        await message.reply("❌ Автоматический дайджест отключен")
+    else:
+        # Validate time format HH:MM
+        import re
+        if re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_arg):
+            db.set_digest_schedule(user_id, True, time_arg)
+            await message.reply(f"✅ Дайджест будет приходить каждый день в {time_arg}")
+        else:
+            await message.reply("❌ Неверный формат времени. Используйте HH:MM (например, 09:00)")
+
+async def admin_collect_news(message: types.Message):
+    """Admin: manually trigger news collection"""
+    if not is_admin(message.from_user.id):
+        await message.reply("⛔ Доступ запрещен.")
+        return
+    
+    await message.reply("🔄 Начинаю сбор новостей...")
+    
+    try:
+        count = await run_scheduler_once(db)
+        await message.reply(f"✅ Собрано {count} новых новостей")
+    except Exception as e:
+        await message.reply(f"❌ Ошибка: {e}")
+
+async def admin_news_stats(message: types.Message):
+    """Admin: show news statistics"""
+    if not is_admin(message.from_user.id):
+        await message.reply("⛔ Доступ запрещен.")
+        return
+    
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COUNT(*) FROM news_articles')
+        total_news = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM news_articles WHERE date(published) = date("now")')
+        today_news = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT category, COUNT(*) FROM news_articles GROUP BY category')
+        by_category = cursor.fetchall()
+        
+        cursor.execute('SELECT COUNT(*) FROM user_interests')
+        total_interests = cursor.fetchone()[0]
+    
+    categories_text = "\n".join([f"  {row['category']}: {row[1]}" for row in by_category])
+    
+    await message.reply(
+        f"📰 <b>Статистика новостей</b>\n\n"
+        f"Всего новостей в базе: {total_news}\n"
+        f"Сегодня добавлено: {today_news}\n"
+        f"Всего подписок на категории: {total_interests}\n\n"
+        f"<b>По категориям:</b>\n{categories_text}",
+        parse_mode='HTML'
+    )
+
 async def main():
+    # Initialize scheduler
+    scheduler = NewsScheduler(bot, db)
+    
+    # Start scheduler in background
+    scheduler_task = asyncio.create_task(scheduler.start())
+    
+    # Register handlers
     dp.message.register(send_welcome, Command(commands=['start']))
     dp.message.register(weather_bishkek, Command(commands=['weather_bishkek']))
     dp.message.register(weather_moscow, Command(commands=['weather_moscow']))
@@ -841,17 +1002,33 @@ async def main():
     dp.message.register(toggle_voice, Command(commands=['toggle_voice']))
     dp.message.register(clear_history, Command(commands=['clear_history']))
     dp.message.register(user_stats, Command(commands=['stats']))
+    # News digest commands
+    dp.message.register(show_interests, Command(commands=['interests']))
+    dp.message.register(get_digest, Command(commands=['digest']))
+    dp.message.register(schedule_digest, Command(commands=['schedule']))
+    # Add interest handlers for each category
+    for cat in ['tech', 'ai', 'science', 'space', 'finance', 'kyrgyzstan', 'world', 'sports', 'other']:
+        dp.message.register(add_interest_handler, Command(commands=[f'add_{cat}']))
+        dp.message.register(remove_interest_handler, Command(commands=[f'remove_{cat}']))
     # Admin commands
     dp.message.register(admin_panel, Command(commands=['admin']))
     dp.message.register(broadcast_message, Command(commands=['broadcast']))
     dp.message.register(user_info, Command(commands=['user_info']))
+    dp.message.register(admin_collect_news, Command(commands=['collect_news']))
+    dp.message.register(admin_news_stats, Command(commands=['news_stats']))
     # Voice messages handler
     dp.message.register(handle_voice_message, lambda msg: msg.voice is not None)
     # Text messages
     dp.message.register(handle_text)
     dp.callback_query.register(contact_callback_handler)
+    
     logging.info("Бот запущен и готов к обработке сообщений.")
-    await dp.start_polling(bot)
+    
+    try:
+        await dp.start_polling(bot)
+    finally:
+        scheduler.stop()
+        scheduler_task.cancel()
 
 if __name__ == '__main__':
     # Запускаем только на Railway (проверяем переменную окружения Railway)
