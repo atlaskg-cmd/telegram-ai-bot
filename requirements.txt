@@ -3,3 +3,4 @@ requests==2.32.5
 gtts
 aiohttp
 edge-tts
+feedparser
