@@ -43,8 +43,8 @@ This is a Telegram bot that uses AI to answer user questions via OpenRouter API,
 - **Edge-TTS**: High-quality voice responses using Microsoft Edge voices (ru-RU-SvetlanaNeural).
 - **Voice Recognition**: Send voice messages and bot transcribes + responds (Whisper API).
 - **AI News Digest**: Personalized news from 20+ RSS sources with sentiment analysis.
-- **AI Image Generation**: Generate images with DALL-E via `/image` command.
-- **GPT-4 Turbo**: Advanced AI chat via `/gpt4` command.
+- **AI Image Generation**: Generate images with ByteDance Seedream (free) via `/image` command.
+- **DeepSeek R1**: Advanced AI chat (free, GPT-4 level) via `/gpt4` command.
 - **Admin Panel**: Statistics, broadcast messages, user info.
 - Contacts: View and search contacts with inline keyboard.
 - Reply keyboard for quick access to commands.
@@ -52,9 +52,9 @@ This is a Telegram bot that uses AI to answer user questions via OpenRouter API,
 
 ## Changelog
 
-### Version 2.1.0 - AI Image & GPT-4
-- **Added:** Image generation with DALL-E (`/image <prompt>`).
-- **Added:** GPT-4 Turbo chat for complex tasks (`/gpt4 <question>`).
+### Version 2.1.0 - AI Image & DeepSeek (Free Models)
+- **Added:** Image generation with ByteDance Seedream 4.5 **(free)** (`/image <prompt>`).
+- **Added:** DeepSeek R1 chat **(free, GPT-4 level)** for complex tasks (`/gpt4 <question>`).
 
 ### Version 2.0.0 - AI News Digest
 - **Added:** News aggregator with 20+ RSS sources (Tech, AI, Science, Space, Finance, Kyrgyzstan, World, Sports).
