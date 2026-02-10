@@ -37,26 +37,17 @@ git push origin main
   - `OPENROUTER_API_KEY` - API ключ OpenRouter
   - `WEATHER_API_KEY` - ключ OpenWeatherMap
   - `ADMIN_ID` - твой Telegram ID для админ-панели
-  - `TOGETHER_API_KEY` - Together AI API ключ (FLUX.1, $1 бесплатно, лучшее качество)
-  - `HF_TOKEN` - Hugging Face токен (бесплатный fallback для изображений)
+  - `HF_TOKEN` - Hugging Face токен (FLUX.1, бесплатный tier)
   - `CF_API_TOKEN` - Cloudflare API Token (для генерации изображений)
   - `CF_ACCOUNT_ID` - Cloudflare Account ID (для генерации изображений)
   - `DATABASE_URL` - автоматически создаётся при добавлении PostgreSQL
 
-### 4. Image Generation (Together AI + FLUX.1)
+### 4. Image Generation (FREE only)
 
 Приоритет провайдеров (автоматический fallback):
-1. **Together AI (FLUX.1 schnell)** - лучшее качество, $1 бесплатно при регистрации
-2. **Hugging Face** - бесплатный tier, FLUX.1
-3. **Cloudflare Workers AI** - если настроен
-4. **Pollinations.ai** - всегда бесплатно
-
-#### Получение Together AI API Key:
-1. Перейди на https://api.together.xyz/
-2. Зарегистрируйся (можно через GitHub)
-3. Получи **$1 бесплатно** (~300 изображений)
-4. Скопируй API ключ из Dashboard → Settings → API Keys
-5. Добавь в Railway Variables как `TOGETHER_API_KEY`
+1. **Hugging Face** - бесплатный tier, FLUX.1 schnell (отличное качество!)
+2. **Cloudflare Workers AI** - если настроен (10k запросов/день)
+3. **Pollinations.ai** - всегда бесплатно, без API ключа
 
 #### Получение Hugging Face Token (бесплатно):
 1. Перейди на https://huggingface.co/settings/tokens
