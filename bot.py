@@ -704,7 +704,8 @@ async def admin_panel(message: types.Message):
         f"💬 Всего сообщений: {stats['total_messages']}\n\n"
         f"<b>Команды:</b>\n"
         f"/broadcast &lt;текст&gt; - Рассылка всем\n"
-        f"/user_info &lt;id&gt; - Инфо о пользователе"
+        f"/user_info &lt;id&gt; - Инфо о пользователе",
+        parse_mode='HTML'
     )
 
 async def broadcast_message(message: types.Message):
@@ -725,7 +726,7 @@ async def broadcast_message(message: types.Message):
     failed = 0
     for user in users:
         try:
-            await bot.send_message(user['telegram_id'], f"📢 <b>Сообщение от админа:</b>\n\n{text}")
+            await bot.send_message(user['telegram_id'], f"📢 <b>Сообщение от админа:</b>\n\n{text}", parse_mode='HTML')
             sent += 1
         except:
             failed += 1
@@ -768,7 +769,8 @@ async def user_info(message: types.Message):
             f"Зарегистрирован: {user['created_at']}\n"
             f"Последняя активность: {user['last_active']}\n\n"
             f"📊 Сообщений: {stats['message_count']}\n"
-            f"👤 Контактов: {stats['contact_count']}"
+            f"👤 Контактов: {stats['contact_count']}",
+            parse_mode='HTML'
         )
 
 async def handle_voice_message(message: types.Message):
@@ -800,7 +802,7 @@ async def handle_voice_message(message: types.Message):
             await message.reply("❌ Не удалось распознать голосовое сообщение.")
             return
         
-        await message.reply(f"📝 <b>Распознанный текст:</b>\n{transcribed_text}")
+        await message.reply(f"📝 <b>Распознанный текст:</b>\n{transcribed_text}", parse_mode='HTML')
         
         db.add_message(user_id, 'user', transcribed_text)
         history = db.get_chat_history(user_id, limit=20)
