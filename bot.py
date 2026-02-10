@@ -282,7 +282,7 @@ def get_weather(city):
 
 # Function to get currency rates
 def get_currency():
-    url = config["currency_api_url"]
+    url = config.get("currency_api_url", "https://api.exchangerate-api.com/v4/latest/USD")
     try:
         response = requests.get(url)
         if response.status_code == 200:
