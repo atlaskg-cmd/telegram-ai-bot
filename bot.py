@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 from database import Database
 from news_scheduler import NewsScheduler, run_scheduler_once
 from news_aggregator import NewsAggregator
+from image_generator import ImageGenerator, GPT4Chat
 
 try:
     from gtts import gTTS
@@ -66,6 +67,10 @@ dp = Dispatcher()
 
 # Initialize database
 db = Database()
+
+# Initialize AI services
+image_gen = ImageGenerator()
+gpt4_chat = GPT4Chat()
 
 # Dictionary for temporary states (password input, etc.)
 user_states = {}
@@ -416,6 +421,9 @@ async def send_welcome(message: types.Message):
             "📋 /interests - Мои интересы\n"
             "📰 /digest - Получить дайджест сейчас\n"
             "📅 /schedule - Настроить расписание\n\n"
+            "<b>🎨 AI Генерация:</b>\n"
+            "🎨 /image &lt;описание&gt; - Сгенерировать картинку\n"
+            "🧠 /gpt4 &lt;вопрос&gt; - GPT-4 Turbo\n\n"
             "<b>🎤 Голос:</b>\n"
             "🎤 /toggle_voice - Переключить голосовой режим\n"
             + ("🎤 /voice [вопрос] - Ответ голосом\n" if TTS_AVAILABLE else "")
@@ -982,6 +990,88 @@ async def admin_news_stats(message: types.Message):
         parse_mode='HTML'
     )
 
+# ========== AI IMAGE GENERATION & GPT-4 ==========
+
+async def generate_image_handler(message: types.Message):
+    """Generate image using DALL-E"""
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    
+    prompt = message.text.replace('/image', '').strip()
+    if not prompt:
+        await message.reply(
+            "🎨 <b>Генерация изображений</b>\n\n"
+            "Использование: /image &lt;описание&gt;\n\n"
+            "Примеры:\n"
+            "/image кот в космосе\n"
+            "/image футуристический город\n"
+            "/image логотип для кафе",
+            parse_mode='HTML'
+        )
+        return
+    
+    # Check prompt length
+    if len(prompt) > 1000:
+        await message.reply("❌ Описание слишком длинное. Максимум 1000 символов.")
+        return
+    
+    await message.reply("🎨 Генерирую изображение... Это может занять 10-30 секунд.")
+    
+    try:
+        image_path = await asyncio.to_thread(image_gen.generate_image, prompt)
+        
+        if image_path:
+            await bot.send_photo(
+                message.chat.id,
+                photo=FSInputFile(image_path),
+                caption=f"🎨 <b>Сгенерировано по запросу:</b>\n{prompt}",
+                parse_mode='HTML'
+            )
+            # Cleanup temp file
+            import os
+            os.unlink(image_path)
+        else:
+            await message.reply("❌ Не удалось сгенерировать изображение. Попробуйте другой запрос.")
+    except Exception as e:
+        logging.error(f"Error in image generation: {e}")
+        await message.reply(f"❌ Ошибка при генерации: {e}")
+
+async def gpt4_chat_handler(message: types.Message):
+    """Chat with GPT-4 Turbo"""
+    user_id = message.from_user.id
+    if not await ensure_auth(message):
+        return
+    
+    user_input = message.text.replace('/gpt4', '').strip()
+    if not user_input:
+        await message.reply(
+            "🧠 <b>ChatGPT-4 Turbo</b>\n\n"
+            "Использование: /gpt4 &lt;вопрос&gt;\n\n"
+            "GPT-4 — более умная модель для сложных задач:\n"
+            "• Сложный код и алгоритмы\n"
+            "• Математика и логика\n"
+            "• Анализ текста\n"
+            "• Творческие задачи\n\n"
+            "Для обычных вопросов просто пишите без /gpt4",
+            parse_mode='HTML'
+        )
+        return
+    
+    await message.reply("🧠 Думаю над ответом (GPT-4)...")
+    
+    try:
+        response = await asyncio.to_thread(gpt4_chat.simple_chat, user_input)
+        
+        # Save to chat history
+        db.add_message(user_id, 'user', f'[GPT4] {user_input}')
+        db.add_message(user_id, 'assistant', response)
+        
+        await message.reply(f"🧠 <b>GPT-4:</b>\n{response}", parse_mode='HTML')
+    except Exception as e:
+        logging.error(f"Error in GPT-4 chat: {e}")
+        await message.reply(f"❌ Ошибка: {e}")
+
 async def main():
     # Initialize scheduler
     scheduler = NewsScheduler(bot, db)
@@ -1010,6 +1100,9 @@ async def main():
     for cat in ['tech', 'ai', 'science', 'space', 'finance', 'kyrgyzstan', 'world', 'sports', 'other']:
         dp.message.register(add_interest_handler, Command(commands=[f'add_{cat}']))
         dp.message.register(remove_interest_handler, Command(commands=[f'remove_{cat}']))
+    # AI Image & GPT-4
+    dp.message.register(generate_image_handler, Command(commands=['image']))
+    dp.message.register(gpt4_chat_handler, Command(commands=['gpt4']))
     # Admin commands
     dp.message.register(admin_panel, Command(commands=['admin']))
     dp.message.register(broadcast_message, Command(commands=['broadcast']))
