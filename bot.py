@@ -38,7 +38,10 @@ except json.JSONDecodeError as e:
 
 # Initialize bot and dispatcher
 API_TOKEN = os.environ.get("TELEGRAM_API_TOKEN", "7968782605:AAEyELGMhUCMwzHH7FglYs9oL4Hi0Ew7CkQ")
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or config.get("openrouter_api_key", "")
+key_source = "env" if os.environ.get("OPENROUTER_API_KEY") else "config"
+logging.info(f'OPENROUTER_API_KEY source: {key_source}, length: {len(OPENROUTER_API_KEY)}')
+logging.info(f'OPENROUTER_API_KEY value: {OPENROUTER_API_KEY[:25]}...')
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", config.get("weather_api_key", "YOUR_OPENWEATHERMAP_API_KEY"))
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
