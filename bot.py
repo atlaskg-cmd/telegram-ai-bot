@@ -1084,16 +1084,28 @@ async def admin_news_stats(message: types.Message):
         cursor.execute('SELECT COUNT(*) FROM news_articles')
         total_news = cursor.fetchone()[0]
         
-        cursor.execute('SELECT COUNT(*) FROM news_articles WHERE date(published) = date("now")')
-        today_news = cursor.fetchone()[0]
-        
-        cursor.execute('SELECT category, COUNT(*) FROM news_articles GROUP BY category')
-        by_category = cursor.fetchall()
-        
-        cursor.execute('SELECT COUNT(*) FROM user_interests')
-        total_interests = cursor.fetchone()[0]
-    
-    categories_text = "\n".join([f"  {row['category']}: {row[1]}" for row in by_category])
+        if db.use_postgres:
+            cursor.execute('SELECT COUNT(*) FROM news_articles WHERE DATE(published) = CURRENT_DATE')
+            today_news = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT category, COUNT(*) FROM news_articles GROUP BY category')
+            by_category = cursor.fetchall()
+            
+            cursor.execute('SELECT COUNT(*) FROM user_interests')
+            total_interests = cursor.fetchone()[0]
+            
+            categories_text = "\n".join([f"  {row[0]}: {row[1]}" for row in by_category])
+        else:
+            cursor.execute('SELECT COUNT(*) FROM news_articles WHERE date(published) = date("now")')
+            today_news = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT category, COUNT(*) FROM news_articles GROUP BY category')
+            by_category = cursor.fetchall()
+            
+            cursor.execute('SELECT COUNT(*) FROM user_interests')
+            total_interests = cursor.fetchone()[0]
+            
+            categories_text = "\n".join([f"  {row['category']}: {row[1]}" for row in by_category])
     
     await message.reply(
         f"📰 <b>Статистика новостей</b>\n\n"
