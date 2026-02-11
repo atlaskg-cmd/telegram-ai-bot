@@ -14,6 +14,7 @@ from database import Database
 from news_scheduler import NewsScheduler, run_scheduler_once
 from news_aggregator import NewsAggregator
 from image_generator import ImageGenerator, DeepSeekChat
+from crypto_tracker import crypto
 
 try:
     from gtts import gTTS
@@ -112,6 +113,7 @@ main_keyboard = ReplyKeyboardMarkup(
         [KeyboardButton(text='Погода Иссык-Куль'), KeyboardButton(text='Погода Боконбаево'), KeyboardButton(text='Погода Тон')],
         [KeyboardButton(text='Курс валют'), KeyboardButton(text='Новости'), KeyboardButton(text='Контакты')],
         [KeyboardButton(text='🎨 Сгенерировать картинку'), KeyboardButton(text='📰 AI Дайджест')],
+        [KeyboardButton(text='💰 Криптовалюты'), KeyboardButton(text='📈 Мой портфель')],
         [KeyboardButton(text='Переключить голос'), KeyboardButton(text='Голосовой ответ'), KeyboardButton(text='👤 Админ')]
     ],
     resize_keyboard=True,
@@ -701,6 +703,8 @@ async def handle_text(message: types.Message):
         'Голосовой ответ': 'voice_help',
         '🎨 Сгенерировать картинку': 'image_menu',
         '📰 AI Дайджест': 'digest',
+        '💰 Криптовалюты': 'crypto_menu',
+        '📈 Мой портфель': 'crypto_portfolio',
         '👤 Админ': 'admin'
     }
     
@@ -739,6 +743,10 @@ async def handle_text(message: types.Message):
             await message.reply("🎨 Опишите, какую картинку хотите сгенерировать:\n\nНапример: «кот в космосе, цифровое искусство»")
         elif user_input == '📰 AI Дайджест':
             await get_digest(message)
+        elif user_input == '💰 Криптовалюты':
+            await crypto_menu(message)
+        elif user_input == '📈 Мой портфель':
+            await crypto_portfolio(message)
         elif user_input == '👤 Админ':
             if is_admin(user_id):
                 await admin_panel(message)
@@ -1558,6 +1566,392 @@ async def show_user_actions(message: types.Message, target_id: int):
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.reply(text, parse_mode='HTML', reply_markup=kb)
 
+# ========== CRYPTO COMMANDS ==========
+
+async def crypto_menu(message: types.Message):
+    """Show crypto menu"""
+    if not await ensure_auth(message):
+        return
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏆 Топ-10 по капитализации", callback_data="crypto:top")],
+        [InlineKeyboardButton(text="🔥 Трендовые", callback_data="crypto:trending")],
+        [InlineKeyboardButton(text="🔍 Поиск монеты", callback_data="crypto:search")],
+        [InlineKeyboardButton(text="📈 BTC", callback_data="crypto:price:bitcoin"), 
+         InlineKeyboardButton(text="📈 ETH", callback_data="crypto:price:ethereum")],
+        [InlineKeyboardButton(text="📈 TON", callback_data="crypto:price:toncoin"), 
+         InlineKeyboardButton(text="📈 SOL", callback_data="crypto:price:solana")],
+        [InlineKeyboardButton(text="📊 Мой портфель", callback_data="crypto:portfolio")],
+    ])
+    
+    await message.reply(
+        "💰 <b>Криптовалюты</b>\n\n"
+        "Отслеживайте цены в реальном времени:\n"
+        "• Топ монет по капитализации\n"
+        "• Трендовые криптовалюты\n"
+        "• Поиск любой монеты\n"
+        "• Ваш личный портфель\n\n"
+        "<i>Выберите действие:</i>",
+        parse_mode='HTML',
+        reply_markup=kb
+    )
+
+async def crypto_portfolio(message: types.Message):
+    """Show user's crypto portfolio"""
+    if not await ensure_auth(message):
+        return
+    
+    user_id = message.from_user.id
+    portfolio = db.get_user_portfolio(user_id)
+    
+    if not portfolio:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Добавить монету", callback_data="crypto:add")],
+            [InlineKeyboardButton(text="💰 Меню крипто", callback_data="crypto:menu")],
+        ])
+        await message.reply(
+            "📈 <b>Ваш портфель пуст</b>\n\n"
+            "Добавьте криптовалюты чтобы отслеживать их стоимость.",
+            parse_mode='HTML',
+            reply_markup=kb
+        )
+        return
+    
+    # Get current prices
+    coin_ids = [item['coin_id'] for item in portfolio]
+    prices = crypto.get_multiple_prices(coin_ids)
+    
+    total_value = 0
+    total_invested = 0
+    text_parts = ["📈 <b>Ваш крипто-портфель</b>\n"]
+    
+    for item in portfolio:
+        coin_id = item['coin_id']
+        symbol = item['symbol']
+        amount = item['amount']
+        avg_price = item['avg_buy_price']
+        
+        if coin_id in prices:
+            current_price = prices[coin_id]['price']
+            value = amount * current_price
+            invested = amount * avg_price if avg_price else 0
+            pnl = value - invested
+            pnl_percent = ((current_price - avg_price) / avg_price * 100) if avg_price else 0
+            
+            total_value += value
+            total_invested += invested
+            
+            emoji = "🟢" if pnl >= 0 else "🔴"
+            text_parts.append(
+                f"\n<b>{symbol}</b> ({amount:.4f})\n"
+                f"  Цена: {crypto.format_price(current_price)}\n"
+                f"  Стоимость: {crypto.format_price(value)}\n"
+                f"  {emoji} P&L: {pnl:+.2f}$ ({pnl_percent:+.2f}%)"
+            )
+        else:
+            text_parts.append(f"\n<b>{symbol}</b>: данные недоступны")
+    
+    # Total P&L
+    total_pnl = total_value - total_invested
+    total_pnl_percent = ((total_value - total_invested) / total_invested * 100) if total_invested else 0
+    emoji_total = "🟢" if total_pnl >= 0 else "🔴"
+    
+    text_parts.append(f"\n\n<b>📊 Итого:</b>")
+    text_parts.append(f"  Стоимость: {crypto.format_price(total_value)}")
+    text_parts.append(f"  {emoji_total} P&L: {total_pnl:+.2f}$ ({total_pnl_percent:+.2f}%)")
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить", callback_data="crypto:add"),
+         InlineKeyboardButton(text="📝 Изменить", callback_data="crypto:edit")],
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="crypto:portfolio"),
+         InlineKeyboardButton(text="💰 Меню", callback_data="crypto:menu")],
+    ])
+    
+    await message.reply("\n".join(text_parts), parse_mode='HTML', reply_markup=kb)
+
+async def crypto_callback_handler(callback: types.CallbackQuery):
+    """Handle crypto callbacks"""
+    data = callback.data or ''
+    user_id = callback.from_user.id
+    
+    await callback.answer()
+    
+    if data == "crypto:menu":
+        await crypto_menu(callback.message)
+        return
+    
+    if data == "crypto:portfolio":
+        await crypto_portfolio(callback.message)
+        return
+    
+    if data == "crypto:top":
+        await callback.message.reply("⏳ Загружаю топ-10 монет...")
+        coins = crypto.get_top_coins(10)
+        
+        if not coins:
+            await callback.message.reply("❌ Не удалось загрузить данные. Попробуйте позже.")
+            return
+        
+        text_parts = ["🏆 <b>Топ-10 криптовалют</b>\n"]
+        for coin in coins:
+            change_emoji = "🟢" if coin['change_24h'] and coin['change_24h'] > 0 else "🔴" if coin['change_24h'] and coin['change_24h'] < 0 else "⚪"
+            text_parts.append(
+                f"\n<b>#{coin['rank']} {coin['symbol']}</b> ({coin['name']})\n"
+                f"  💰 Цена: {crypto.format_price(coin['price'])}\n"
+                f"  {change_emoji} 24ч: {coin['change_24h']:+.2f}%\n"
+                f"  📊 Капитализация: {crypto.format_price(coin['market_cap'])}"
+            )
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💰 Меню", callback_data="crypto:menu")],
+        ])
+        await callback.message.reply("\n".join(text_parts), parse_mode='HTML', reply_markup=kb)
+        return
+    
+    if data == "crypto:trending":
+        await callback.message.reply("⏳ Загружаю трендовые монеты...")
+        coins = crypto.get_trending()
+        
+        if not coins:
+            await callback.message.reply("❌ Не удалось загрузить данные. Попробуйте позже.")
+            return
+        
+        text_parts = ["🔥 <b>Трендовые криптовалюты</b>\n"]
+        for coin in coins:
+            text_parts.append(
+                f"\n<b>{coin['symbol']}</b> - {coin['name']}\n"
+                f"  📊 Ранг: #{coin['market_cap_rank']}"
+            )
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💰 Меню", callback_data="crypto:menu")],
+        ])
+        await callback.message.reply("\n".join(text_parts), parse_mode='HTML', reply_markup=kb)
+        return
+    
+    if data == "crypto:search":
+        user_states[user_id] = {'awaiting_crypto_search': True}
+        await callback.message.reply("🔍 Введите название или символ монеты (например: BTC, bitcoin, Ethereum):")
+        return
+    
+    if data == "crypto:add":
+        user_states[user_id] = {'awaiting_crypto_add': True}
+        await callback.message.reply(
+            "➕ <b>Добавление в портфель</b>\n\n"
+            "Введите данные в формате:\n"
+            "<code>SYMBOL КОЛИЧЕСТВО ЦЕНА_ПОКУПКИ</code>\n\n"
+            "Примеры:\n"
+            "<code>BTC 0.5 45000</code>\n"
+            "<code>ETH 2.5 3000</code>\n\n"
+            "Если не помните цену покупки, введите 0",
+            parse_mode='HTML'
+        )
+        return
+    
+    if data == "crypto:edit":
+        user_states[user_id] = {'awaiting_crypto_edit': True}
+        await callback.message.reply(
+            "📝 <b>Изменение в портфеле</b>\n\n"
+            "Введите данные в формате:\n"
+            "<code>SYMBOL НОВОЕ_КОЛИЧЕСТВО НОВАЯ_ЦЕНА</code>\n\n"
+            "Или для удаления: <code>SYMBOL 0 0</code>",
+            parse_mode='HTML'
+        )
+        return
+    
+    if data.startswith("crypto:price:"):
+        coin_id = data.split(':')[2]
+        await callback.message.reply(f"⏳ Загружаю цену {coin_id}...")
+        
+        price_data = crypto.get_price(coin_id)
+        if not price_data:
+            await callback.message.reply("❌ Не удалось получить данные. Попробуйте позже.")
+            return
+        
+        if 'error' in price_data:
+            await callback.message.reply("⏳ Превышен лимит запросов. Попробуйте через минуту.")
+            return
+        
+        change_emoji = "🟢" if price_data['change_24h'] > 0 else "🔴" if price_data['change_24h'] < 0 else "⚪"
+        
+        text = (
+            f"💰 <b>{coin_id.upper()}</b>\n\n"
+            f"Цена: {crypto.format_price(price_data['price'])}\n"
+            f"{change_emoji} 24ч: {price_data['change_24h']:+.2f}%\n"
+            f"📊 Капитализация: {crypto.format_price(price_data['market_cap'])}\n"
+            f"📈 Объем 24ч: {crypto.format_price(price_data['volume_24h'])}"
+        )
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ В портфель", callback_data=f"crypto:add_quick:{coin_id}"),
+             InlineKeyboardButton(text="🔄 Обновить", callback_data=f"crypto:price:{coin_id}")],
+            [InlineKeyboardButton(text="💰 Меню", callback_data="crypto:menu")],
+        ])
+        await callback.message.reply(text, parse_mode='HTML', reply_markup=kb)
+        return
+    
+    if data.startswith("crypto:add_quick:"):
+        coin_id = data.split(':')[2]
+        user_states[user_id] = {'awaiting_crypto_add_quick': True, 'coin_id': coin_id}
+        await callback.message.reply(
+            f"➕ <b>Добавление {coin_id.upper()}</b>\n\n"
+            f"Введите количество и цену покупки:\n"
+            f"<code>КОЛИЧЕСТВО ЦЕНА</code>\n\n"
+            f"Пример: <code>0.5 45000</code>",
+            parse_mode='HTML'
+        )
+        return
+
+async def handle_crypto_text(message: types.Message):
+    """Handle crypto text inputs"""
+    user_id = message.from_user.id
+    state = user_states.get(user_id, {})
+    
+    # Handle crypto search
+    if state.get('awaiting_crypto_search'):
+        query = message.text.strip()
+        user_states.pop(user_id, None)
+        
+        await message.reply(f"🔍 Ищу {query}...")
+        coin = crypto.search_coin(query)
+        
+        if not coin:
+            await message.reply(f"❌ Монета '{query}' не найдена. Попробуйте другой запрос.")
+            return
+        
+        # Get price
+        price_data = crypto.get_price(coin['id'])
+        if price_data and 'error' not in price_data:
+            change_emoji = "🟢" if price_data['change_24h'] > 0 else "🔴" if price_data['change_24h'] < 0 else "⚪"
+            text = (
+                f"💰 <b>{coin['symbol']}</b> - {coin['name']}\n\n"
+                f"Цена: {crypto.format_price(price_data['price'])}\n"
+                f"{change_emoji} 24ч: {price_data['change_24h']:+.2f}%\n"
+                f"📊 Капитализация: {crypto.format_price(price_data['market_cap'])}"
+            )
+        else:
+            text = f"💰 <b>{coin['symbol']}</b> - {coin['name']}\n\n<i>Данные о цене временно недоступны</i>"
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ В портфель", callback_data=f"crypto:add_quick:{coin['id']}")],
+            [InlineKeyboardButton(text="💰 Меню", callback_data="crypto:menu")],
+        ])
+        await message.reply(text, parse_mode='HTML', reply_markup=kb)
+        return
+    
+    # Handle add to portfolio
+    if state.get('awaiting_crypto_add'):
+        text = message.text.strip()
+        user_states.pop(user_id, None)
+        
+        parts = text.split()
+        if len(parts) < 2:
+            await message.reply("❌ Неверный формат. Используйте: SYMBOL КОЛИЧЕСТВО ЦЕНА_ПОКУПКИ")
+            return
+        
+        symbol = parts[0].upper()
+        try:
+            amount = float(parts[1])
+            avg_price = float(parts[2]) if len(parts) > 2 else 0
+        except ValueError:
+            await message.reply("❌ Неверные числа. Проверьте формат.")
+            return
+        
+        # Search coin
+        coin = crypto.search_coin(symbol)
+        if not coin:
+            await message.reply(f"❌ Монета '{symbol}' не найдена.")
+            return
+        
+        # Add to portfolio
+        if db.add_crypto_to_portfolio(user_id, coin['id'], coin['symbol'], amount, avg_price):
+            await message.reply(
+                f"✅ <b>{coin['symbol']}</b> добавлен в портфель!\n"
+                f"Количество: {amount}\n"
+                f"Цена покупки: {crypto.format_price(avg_price) if avg_price else 'Не указана'}",
+                parse_mode='HTML'
+            )
+        else:
+            await message.reply("❌ Ошибка при добавлении. Попробуйте позже.")
+        return
+    
+    # Handle quick add
+    if state.get('awaiting_crypto_add_quick'):
+        text = message.text.strip()
+        coin_id = state.get('coin_id')
+        user_states.pop(user_id, None)
+        
+        parts = text.split()
+        if len(parts) < 1:
+            await message.reply("❌ Введите количество и цену (опционально)")
+            return
+        
+        try:
+            amount = float(parts[0])
+            avg_price = float(parts[1]) if len(parts) > 1 else 0
+        except ValueError:
+            await message.reply("❌ Неверные числа")
+            return
+        
+        # Get coin info
+        price_data = crypto.get_price(coin_id)
+        symbol = coin_id.upper()
+        
+        if db.add_crypto_to_portfolio(user_id, coin_id, symbol, amount, avg_price):
+            await message.reply(
+                f"✅ <b>{symbol}</b> добавлен в портфель!\n"
+                f"Количество: {amount}",
+                parse_mode='HTML'
+            )
+        else:
+            await message.reply("❌ Ошибка при добавлении")
+        return
+    
+    # Handle edit portfolio
+    if state.get('awaiting_crypto_edit'):
+        text = message.text.strip()
+        user_states.pop(user_id, None)
+        
+        parts = text.split()
+        if len(parts) < 3:
+            await message.reply("❌ Неверный формат. Используйте: SYMBOL НОВОЕ_КОЛИЧЕСТВО НОВАЯ_ЦЕНА")
+            return
+        
+        symbol = parts[0].upper()
+        try:
+            amount = float(parts[1])
+            avg_price = float(parts[2])
+        except ValueError:
+            await message.reply("❌ Неверные числа")
+            return
+        
+        # Search coin
+        coin = crypto.search_coin(symbol)
+        if not coin:
+            await message.reply(f"❌ Монета '{symbol}' не найдена в вашем портфеле.")
+            return
+        
+        coin_id = coin['id']
+        
+        # Remove if amount is 0
+        if amount == 0:
+            if db.remove_crypto_from_portfolio(user_id, coin_id):
+                await message.reply(f"✅ <b>{symbol}</b> удален из портфеля", parse_mode='HTML')
+            else:
+                await message.reply("❌ Ошибка при удалении")
+            return
+        
+        # Update
+        if db.add_crypto_to_portfolio(user_id, coin_id, coin['symbol'], amount, avg_price):
+            await message.reply(
+                f"✅ <b>{symbol}</b> обновлен!\n"
+                f"Новое количество: {amount}",
+                parse_mode='HTML'
+            )
+        else:
+            await message.reply("❌ Ошибка при обновлении")
+        return
+
 async def main():
     # Initialize scheduler
     scheduler = NewsScheduler(bot, db)
@@ -1601,6 +1995,10 @@ async def main():
     dp.callback_query.register(admin_callback_handler, lambda c: c.data and c.data.startswith('admin:'))
     # Admin text handler (for ban reasons, broadcast, etc.)
     dp.message.register(handle_admin_text, lambda msg: is_admin(msg.from_user.id) and msg.from_user.id in admin_states)
+    # Crypto callback handler
+    dp.callback_query.register(crypto_callback_handler, lambda c: c.data and c.data.startswith('crypto:'))
+    # Crypto text handler
+    dp.message.register(handle_crypto_text, lambda msg: msg.from_user.id in user_states and any(k in user_states.get(msg.from_user.id, {}) for k in ['awaiting_crypto_search', 'awaiting_crypto_add', 'awaiting_crypto_add_quick', 'awaiting_crypto_edit']))
     # Text messages
     dp.message.register(handle_text)
     dp.callback_query.register(contact_callback_handler)

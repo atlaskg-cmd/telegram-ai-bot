@@ -296,6 +296,36 @@ class Database:
                         )
                     ''')
                 
+                # Crypto portfolio table
+                if self.use_postgres:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS crypto_portfolio (
+                            id SERIAL PRIMARY KEY,
+                            user_id BIGINT,
+                            coin_id TEXT NOT NULL,
+                            symbol TEXT NOT NULL,
+                            amount REAL DEFAULT 0,
+                            avg_buy_price REAL DEFAULT 0,
+                            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+                            UNIQUE(user_id, coin_id)
+                        )
+                    ''')
+                else:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS crypto_portfolio (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            coin_id TEXT NOT NULL,
+                            symbol TEXT NOT NULL,
+                            amount REAL DEFAULT 0,
+                            avg_buy_price REAL DEFAULT 0,
+                            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(telegram_id),
+                            UNIQUE(user_id, coin_id)
+                        )
+                    ''')
+                
                 conn.commit()
                 logging.info(f"✅ Database initialized successfully (PostgreSQL: {self.use_postgres})")
         except Exception as e:
@@ -1061,3 +1091,72 @@ class Database:
                 "total_banned": total_banned,
                 "active_today": active_today
             }
+
+    
+    # ========== CRYPTO PORTFOLIO ==========
+    
+    def add_crypto_to_portfolio(self, user_id: int, coin_id: str, symbol: str, amount: float, avg_buy_price: float = 0) -> bool:
+        """Add or update crypto in user's portfolio"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                if self.use_postgres:
+                    cursor.execute('''
+                        INSERT INTO crypto_portfolio (user_id, coin_id, symbol, amount, avg_buy_price)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id, coin_id) DO UPDATE SET
+                            amount = EXCLUDED.amount,
+                            avg_buy_price = EXCLUDED.avg_buy_price,
+                            symbol = EXCLUDED.symbol
+                    ''', (user_id, coin_id.lower(), symbol.upper(), amount, avg_buy_price))
+                else:
+                    cursor.execute('''
+                        INSERT INTO crypto_portfolio (user_id, coin_id, symbol, amount, avg_buy_price)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(user_id, coin_id) DO UPDATE SET
+                            amount = excluded.amount,
+                            avg_buy_price = excluded.avg_buy_price,
+                            symbol = excluded.symbol
+                    ''', (user_id, coin_id.lower(), symbol.upper(), amount, avg_buy_price))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error adding crypto to portfolio: {e}")
+            return False
+    
+    def remove_crypto_from_portfolio(self, user_id: int, coin_id: str) -> bool:
+        """Remove crypto from user's portfolio"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            self._execute(cursor, '''
+                DELETE FROM crypto_portfolio WHERE user_id = ? AND coin_id = ?
+            ''', (user_id, coin_id.lower()))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_user_portfolio(self, user_id: int) -> List[Dict]:
+        """Get user's crypto portfolio"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            self._execute(cursor, '''
+                SELECT * FROM crypto_portfolio WHERE user_id = ? ORDER BY added_at DESC
+            ''', (user_id,))
+            rows = cursor.fetchall()
+            if self.use_postgres:
+                return [{
+                    "id": row[0], "user_id": row[1], "coin_id": row[2],
+                    "symbol": row[3], "amount": row[4], "avg_buy_price": row[5],
+                    "added_at": row[6]
+                } for row in rows]
+            else:
+                return [dict(row) for row in rows]
+    
+    def update_crypto_amount(self, user_id: int, coin_id: str, amount: float) -> bool:
+        """Update crypto amount"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            self._execute(cursor, '''
+                UPDATE crypto_portfolio SET amount = ? WHERE user_id = ? AND coin_id = ?
+            ''', (amount, user_id, coin_id.lower()))
+            conn.commit()
+            return cursor.rowcount > 0
