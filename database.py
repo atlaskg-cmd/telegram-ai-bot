@@ -647,7 +647,7 @@ class Database:
         """Remove interest category for user"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            self._execute(cursor, '''
                 DELETE FROM user_interests WHERE user_id = ? AND category = ?
             ''', (user_id, category.lower()))
             conn.commit()
@@ -657,7 +657,7 @@ class Database:
         """Get all interests for user"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            self._execute(cursor, '''
                 SELECT category FROM user_interests WHERE user_id = ?
             ''', (user_id,))
             if self.use_postgres:
@@ -695,7 +695,7 @@ class Database:
         """Get feedback statistics for user"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            self._execute(cursor, '''
                 SELECT feedback, COUNT(*) as count 
                 FROM user_news_feedback 
                 WHERE user_id = ?
@@ -743,7 +743,7 @@ class Database:
         """Get digest schedule for user"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            self._execute(cursor, '''
                 SELECT * FROM digest_schedules WHERE user_id = ?
             ''', (user_id,))
             row = cursor.fetchone()
@@ -789,7 +789,7 @@ class Database:
         """Update last sent timestamp"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            self._execute(cursor, '''
                 UPDATE digest_schedules SET last_sent = CURRENT_TIMESTAMP
                 WHERE user_id = ?
             ''', (user_id,))
