@@ -244,6 +244,58 @@ class Database:
                     )
                 ''')
                 
+                # Admins table
+                if self.use_postgres:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS admins (
+                            id SERIAL PRIMARY KEY,
+                            telegram_id BIGINT UNIQUE NOT NULL,
+                            username TEXT,
+                            role TEXT DEFAULT 'admin',
+                            added_by BIGINT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (added_by) REFERENCES users(telegram_id)
+                        )
+                    ''')
+                else:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS admins (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            telegram_id BIGINT UNIQUE NOT NULL,
+                            username TEXT,
+                            role TEXT DEFAULT 'admin',
+                            added_by INTEGER,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (added_by) REFERENCES users(telegram_id)
+                        )
+                    ''')
+                
+                # Banned users table
+                if self.use_postgres:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS banned_users (
+                            id SERIAL PRIMARY KEY,
+                            telegram_id BIGINT UNIQUE NOT NULL,
+                            username TEXT,
+                            reason TEXT,
+                            banned_by BIGINT,
+                            banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (banned_by) REFERENCES users(telegram_id)
+                        )
+                    ''')
+                else:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS banned_users (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            telegram_id BIGINT UNIQUE NOT NULL,
+                            username TEXT,
+                            reason TEXT,
+                            banned_by INTEGER,
+                            banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (banned_by) REFERENCES users(telegram_id)
+                        )
+                    ''')
+                
                 conn.commit()
                 logging.info(f"✅ Database initialized successfully (PostgreSQL: {self.use_postgres})")
         except Exception as e:
@@ -794,3 +846,218 @@ class Database:
                 WHERE user_id = ?
             ''', (user_id,))
             conn.commit()
+
+    # ========== ADMIN MANAGEMENT ==========
+    
+    def is_admin(self, telegram_id: int) -> bool:
+        """Check if user is admin (including main admin from env)"""
+        import os
+        main_admin = int(os.environ.get("ADMIN_ID", "0"))
+        if telegram_id == main_admin:
+            return True
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            self._execute(cursor, '''
+                SELECT COUNT(*) FROM admins WHERE telegram_id = ?
+            ''', (telegram_id,))
+            return cursor.fetchone()[0] > 0
+    
+    def add_admin(self, telegram_id: int, username: str, added_by: int, role: str = 'admin') -> bool:
+        """Add new admin"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                if self.use_postgres:
+                    cursor.execute('''
+                        INSERT INTO admins (telegram_id, username, role, added_by)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (telegram_id) DO UPDATE SET
+                            username = EXCLUDED.username,
+                            role = EXCLUDED.role
+                    ''', (telegram_id, username, role, added_by))
+                else:
+                    cursor.execute('''
+                        INSERT INTO admins (telegram_id, username, role, added_by)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(telegram_id) DO UPDATE SET
+                            username = excluded.username,
+                            role = excluded.role
+                    ''', (telegram_id, username, role, added_by))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error adding admin: {e}")
+            return False
+    
+    def remove_admin(self, telegram_id: int) -> bool:
+        """Remove admin (can't remove main admin)"""
+        import os
+        main_admin = int(os.environ.get("ADMIN_ID", "0"))
+        if telegram_id == main_admin:
+            return False
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            self._execute(cursor, '''
+                DELETE FROM admins WHERE telegram_id = ?
+            ''', (telegram_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_all_admins(self) -> List[Dict]:
+        """Get all admins"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT a.*, u.first_name, u.last_name 
+                FROM admins a
+                LEFT JOIN users u ON a.telegram_id = u.telegram_id
+                ORDER BY a.created_at DESC
+            ''')
+            rows = cursor.fetchall()
+            if self.use_postgres:
+                return [{
+                    "id": row[0], "telegram_id": row[1], "username": row[2],
+                    "role": row[3], "added_by": row[4], "created_at": row[5],
+                    "first_name": row[6], "last_name": row[7]
+                } for row in rows]
+            else:
+                return [dict(row) for row in rows]
+    
+    def update_admin_role(self, telegram_id: int, new_role: str) -> bool:
+        """Update admin role"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            self._execute(cursor, '''
+                UPDATE admins SET role = ? WHERE telegram_id = ?
+            ''', (new_role, telegram_id))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    # ========== BAN MANAGEMENT ==========
+    
+    def is_banned(self, telegram_id: int) -> Optional[Dict]:
+        """Check if user is banned"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            self._execute(cursor, '''
+                SELECT * FROM banned_users WHERE telegram_id = ?
+            ''', (telegram_id,))
+            row = cursor.fetchone()
+            if row:
+                if self.use_postgres:
+                    return {
+                        "id": row[0], "telegram_id": row[1], "username": row[2],
+                        "reason": row[3], "banned_by": row[4], "banned_at": row[5]
+                    }
+                else:
+                    return dict(row)
+            return None
+    
+    def ban_user(self, telegram_id: int, username: str, reason: str, banned_by: int) -> bool:
+        """Ban user"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                if self.use_postgres:
+                    cursor.execute('''
+                        INSERT INTO banned_users (telegram_id, username, reason, banned_by)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (telegram_id) DO UPDATE SET
+                            reason = EXCLUDED.reason,
+                            banned_by = EXCLUDED.banned_by,
+                            banned_at = CURRENT_TIMESTAMP
+                    ''', (telegram_id, username, reason, banned_by))
+                else:
+                    cursor.execute('''
+                        INSERT INTO banned_users (telegram_id, username, reason, banned_by)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(telegram_id) DO UPDATE SET
+                            reason = excluded.reason,
+                            banned_by = excluded.banned_by,
+                            banned_at = CURRENT_TIMESTAMP
+                    ''', (telegram_id, username, reason, banned_by))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Error banning user: {e}")
+            return False
+    
+    def unban_user(self, telegram_id: int) -> bool:
+        """Unban user"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            self._execute(cursor, '''
+                DELETE FROM banned_users WHERE telegram_id = ?
+            ''', (telegram_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_all_banned(self) -> List[Dict]:
+        """Get all banned users"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT b.*, u.first_name, u.last_name,
+                       admin.first_name as admin_first_name
+                FROM banned_users b
+                LEFT JOIN users u ON b.telegram_id = u.telegram_id
+                LEFT JOIN users admin ON b.banned_by = admin.telegram_id
+                ORDER BY b.banned_at DESC
+            ''')
+            rows = cursor.fetchall()
+            if self.use_postgres:
+                return [{
+                    "id": row[0], "telegram_id": row[1], "username": row[2],
+                    "reason": row[3], "banned_by": row[4], "banned_at": row[5],
+                    "first_name": row[6], "last_name": row[7],
+                    "admin_name": row[8]
+                } for row in rows]
+            else:
+                return [dict(row) for row in rows]
+    
+    def get_admin_stats_extended(self) -> Dict:
+        """Extended admin statistics"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Basic stats
+            cursor.execute('SELECT COUNT(*) FROM users')
+            total_users = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM contacts')
+            total_contacts = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM chat_history')
+            total_messages = cursor.fetchone()[0]
+            
+            # Admins count
+            cursor.execute('SELECT COUNT(*) FROM admins')
+            total_admins = cursor.fetchone()[0]
+            
+            # Banned count
+            cursor.execute('SELECT COUNT(*) FROM banned_users')
+            total_banned = cursor.fetchone()[0]
+            
+            # Active today
+            if self.use_postgres:
+                cursor.execute('''
+                    SELECT COUNT(*) FROM users 
+                    WHERE DATE(last_active) = CURRENT_DATE
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT COUNT(*) FROM users 
+                    WHERE date(last_active) = date('now')
+                ''')
+            active_today = cursor.fetchone()[0]
+            
+            return {
+                "total_users": total_users,
+                "total_contacts": total_contacts,
+                "total_messages": total_messages,
+                "total_admins": total_admins,
+                "total_banned": total_banned,
+                "active_today": active_today
+            }

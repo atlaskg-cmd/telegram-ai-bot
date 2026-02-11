@@ -76,11 +76,30 @@ deepseek_chat = DeepSeekChat()
 user_states = {}
 
 # Admin configuration
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))  # Установи свой Telegram ID в Railway Variables
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))  # Главный админ (из env)
 
 def is_admin(user_id: int) -> bool:
-    """Check if user is admin"""
-    return user_id == ADMIN_ID
+    """Check if user is admin (main or from database)"""
+    if user_id == ADMIN_ID:
+        return True
+    return db.is_admin(user_id)
+
+def is_banned(user_id: int) -> bool:
+    """Check if user is banned"""
+    return db.is_banned(user_id) is not None
+
+async def check_banned(message: types.Message) -> bool:
+    """Check and notify if user is banned"""
+    ban_info = db.is_banned(message.from_user.id)
+    if ban_info:
+        await message.reply(
+            f"⛔ <b>Вы заблокированы</b>\n\n"
+            f"Причина: {ban_info.get('reason', 'Не указана')}\n"
+            f"Дата блокировки: {ban_info.get('banned_at', 'Неизвестно')[:10]}",
+            parse_mode='HTML'
+        )
+        return True
+    return False
 
 # Warn if OpenRouter key missing
 if not OPENROUTER_API_KEY:
@@ -174,6 +193,11 @@ def is_authenticated(user_id: int) -> bool:
 
 async def ensure_auth(message: types.Message) -> bool:
     user_id = message.from_user.id
+    
+    # Check if banned
+    if await check_banned(message):
+        return False
+    
     if is_authenticated(user_id):
         return True
     await message.reply('Доступ закрыт. Отправьте /start и введите пароль.')
@@ -439,6 +463,10 @@ def get_news_kyrgyzstan():
 async def send_welcome(message: types.Message):
     logging.info(f"Получена команда /start от пользователя {message.from_user.id}")
     user_id = message.from_user.id
+    
+    # Check if user is banned
+    if await check_banned(message):
+        return
     
     # Save user to database
     db.add_or_update_user(
@@ -821,24 +849,39 @@ async def handle_text(message: types.Message):
 
 # ========== ADMIN COMMANDS ==========
 
+# Admin states for multi-step operations
+admin_states = {}
+
 async def admin_panel(message: types.Message):
-    """Admin panel with full statistics"""
+    """Admin panel with full statistics and management"""
     if not is_admin(message.from_user.id):
         await message.reply("⛔ Доступ запрещен.")
         return
     
-    stats = db.get_admin_stats()
+    stats = db.get_admin_stats_extended()
+    
+    # Create admin keyboard
+    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👥 Управление пользователями", callback_data="admin:users")],
+        [InlineKeyboardButton(text="🛡️ Управление админами", callback_data="admin:admins")],
+        [InlineKeyboardButton(text="🚫 Заблокированные", callback_data="admin:banned")],
+        [InlineKeyboardButton(text="📊 Детальная статистика", callback_data="admin:stats")],
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="admin:broadcast")],
+        [InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="admin:find_user")],
+    ])
+    
     await message.reply(
-        f"👑 <b>Панель администратора</b>\n\n"
-        f"📊 <b>Статистика:</b>\n"
-        f"👥 Всего пользователей: {stats['total_users']}\n"
+        f"👑 <b>ПАНЕЛЬ АДМИНИСТРАТОРА</b>\n\n"
+        f"📊 <b>Общая статистика:</b>\n"
+        f"👥 Пользователей: {stats['total_users']}\n"
         f"🟢 Активных сегодня: {stats['active_today']}\n"
-        f"📇 Всего контактов: {stats['total_contacts']}\n"
-        f"💬 Всего сообщений: {stats['total_messages']}\n\n"
-        f"<b>Команды:</b>\n"
-        f"/broadcast &lt;текст&gt; - Рассылка всем\n"
-        f"/user_info &lt;id&gt; - Инфо о пользователе",
-        parse_mode='HTML'
+        f"📇 Контактов: {stats['total_contacts']}\n"
+        f"💬 Сообщений: {stats['total_messages']}\n"
+        f"🛡️ Админов: {stats['total_admins']}\n"
+        f"🚫 Заблокировано: {stats['total_banned']}\n\n"
+        f"<i>Выберите действие:</i>",
+        parse_mode='HTML',
+        reply_markup=admin_kb
     )
 
 async def broadcast_message(message: types.Message):
@@ -1199,6 +1242,322 @@ async def deepseek_chat_handler(message: types.Message):
         logging.error(f"Error in DeepSeek chat: {e}")
         await message.reply(f"❌ Ошибка: {e}")
 
+# ========== ADMIN MANAGEMENT COMMANDS ==========
+
+async def admin_callback_handler(callback: types.CallbackQuery):
+    """Handle admin panel callbacks"""
+    data = callback.data or ''
+    user_id = callback.from_user.id
+    
+    if not is_admin(user_id):
+        await callback.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    if data == "admin:users":
+        await show_user_management(callback.message)
+    elif data == "admin:admins":
+        await show_admin_management(callback.message)
+    elif data == "admin:banned":
+        await show_banned_users(callback.message)
+    elif data == "admin:stats":
+        await show_detailed_stats(callback.message)
+    elif data == "admin:broadcast":
+        admin_states[user_id] = {'awaiting_broadcast': True}
+        await callback.message.reply("📢 Введите текст для рассылки всем пользователям:")
+    elif data == "admin:find_user":
+        admin_states[user_id] = {'awaiting_user_search': True}
+        await callback.message.reply("🔍 Введите ID пользователя или @username:")
+    elif data.startswith("admin:ban:"):
+        target_id = int(data.split(':')[2])
+        admin_states[user_id] = {'awaiting_ban_reason': True, 'target_id': target_id}
+        await callback.message.reply(f"🚫 Введите причину блокировки пользователя {target_id}:")
+    elif data.startswith("admin:unban:"):
+        target_id = int(data.split(':')[2])
+        if db.unban_user(target_id):
+            await callback.message.reply(f"✅ Пользователь {target_id} разблокирован")
+        else:
+            await callback.message.reply(f"❌ Не удалось разблокировать пользователя {target_id}")
+    elif data.startswith("admin:make_admin:"):
+        target_id = int(data.split(':')[2])
+        admin_states[user_id] = {'awaiting_admin_role': True, 'target_id': target_id}
+        await callback.message.reply(f"🛡️ Введите роль для админа (admin/superadmin) или 'отмена':")
+    elif data.startswith("admin:remove_admin:"):
+        target_id = int(data.split(':')[2])
+        if target_id == ADMIN_ID:
+            await callback.message.reply("❌ Нельзя удалить главного администратора")
+        elif db.remove_admin(target_id):
+            await callback.message.reply(f"✅ Администратор {target_id} удален")
+        else:
+            await callback.message.reply(f"❌ Не удалось удалить администратора {target_id}")
+    elif data == "admin:back":
+        await admin_panel(callback.message)
+
+async def show_user_management(message: types.Message):
+    """Show user management interface"""
+    stats = db.get_admin_stats_extended()
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔍 Найти по ID", callback_data="admin:find_user")],
+        [InlineKeyboardButton(text="🚫 Заблокировать", callback_data="admin:ban_user")],
+        [InlineKeyboardButton(text="📋 Список заблокированных", callback_data="admin:banned")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")],
+    ])
+    
+    await message.reply(
+        f"👥 <b>Управление пользователями</b>\n\n"
+        f"Всего пользователей: {stats['total_users']}\n"
+        f"Заблокировано: {stats['total_banned']}\n\n"
+        f"<i>Выберите действие:</i>",
+        parse_mode='HTML',
+        reply_markup=kb
+    )
+
+async def show_admin_management(message: types.Message):
+    """Show admin management interface"""
+    admins = db.get_all_admins()
+    
+    text = "🛡️ <b>Управление администраторами</b>\n\n"
+    text += f"<b>Главный админ:</b> {ADMIN_ID}\n\n"
+    
+    if admins:
+        text += "<b>Дополнительные админы:</b>\n"
+        for admin in admins:
+            text += f"• {admin['telegram_id']} (@{admin.get('username', 'N/A')}) - {admin.get('role', 'admin')}\n"
+    else:
+        text += "<i>Дополнительных админов нет</i>\n"
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить админа", callback_data="admin:find_user")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")],
+    ])
+    
+    await message.reply(text, parse_mode='HTML', reply_markup=kb)
+
+async def show_banned_users(message: types.Message):
+    """Show banned users list"""
+    banned = db.get_all_banned()
+    
+    if not banned:
+        await message.reply(
+            "🚫 <b>Заблокированные пользователи</b>\n\n"
+            "<i>Нет заблокированных пользователей</i>",
+            parse_mode='HTML'
+        )
+        return
+    
+    text = "🚫 <b>Заблокированные пользователи</b>\n\n"
+    for user in banned:
+        name = user.get('first_name') or user.get('username') or f"ID:{user['telegram_id']}"
+        admin_name = user.get('admin_name') or f"ID:{user['banned_by']}"
+        text += (
+            f"• <b>{name}</b>\n"
+            f"  ID: {user['telegram_id']}\n"
+            f"  Причина: {user.get('reason', 'Не указана')}\n"
+            f"  Заблокировал: {admin_name}\n"
+            f"  Дата: {str(user.get('banned_at', ''))[:10]}\n\n"
+        )
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")],
+    ])
+    
+    await message.reply(text, parse_mode='HTML', reply_markup=kb)
+
+async def show_detailed_stats(message: types.Message):
+    """Show detailed statistics"""
+    stats = db.get_admin_stats_extended()
+    
+    await message.reply(
+        f"📊 <b>Детальная статистика</b>\n\n"
+        f"<b>Пользователи:</b>\n"
+        f"👥 Всего: {stats['total_users']}\n"
+        f"🟢 Активных сегодня: {stats['active_today']}\n\n"
+        f"<b>Данные:</b>\n"
+        f"📇 Контактов: {stats['total_contacts']}\n"
+        f"💬 Сообщений: {stats['total_messages']}\n\n"
+        f"<b>Модерация:</b>\n"
+        f"🛡️ Администраторов: {stats['total_admins']}\n"
+        f"🚫 Заблокировано: {stats['total_banned']}\n",
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")],
+        ])
+    )
+
+async def handle_admin_text(message: types.Message):
+    """Handle admin text inputs (ban reasons, broadcast, etc.)"""
+    user_id = message.from_user.id
+    
+    if not is_admin(user_id):
+        return
+    
+    state = admin_states.get(user_id, {})
+    
+    # Handle broadcast
+    if state.get('awaiting_broadcast'):
+        admin_states.pop(user_id, None)
+        text = message.text
+        users = db.get_all_users()
+        
+        sent = 0
+        failed = 0
+        for user in users:
+            try:
+                await bot.send_message(
+                    user['telegram_id'], 
+                    f"📢 <b>Сообщение от администратора:</b>\n\n{text}",
+                    parse_mode='HTML'
+                )
+                sent += 1
+            except Exception as e:
+                logging.error(f"Failed to send broadcast to {user['telegram_id']}: {e}")
+                failed += 1
+        
+        await message.reply(f"✅ Рассылка завершена\nОтправлено: {sent}\nОшибок: {failed}")
+        return
+    
+    # Handle ban reason
+    if state.get('awaiting_ban_reason'):
+        target_id = state['target_id']
+        reason = message.text
+        admin_states.pop(user_id, None)
+        
+        # Get target user info
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            db._execute(cursor, 'SELECT username, first_name FROM users WHERE telegram_id = ?', (target_id,))
+            row = cursor.fetchone()
+            username = row[0] if row else None
+        
+        if db.ban_user(target_id, username, reason, user_id):
+            await message.reply(f"✅ Пользователь {target_id} заблокирован\nПричина: {reason}")
+            try:
+                await bot.send_message(
+                    target_id,
+                    f"⛔ <b>Вы заблокированы администратором</b>\n\nПричина: {reason}",
+                    parse_mode='HTML'
+                )
+            except:
+                pass
+        else:
+            await message.reply(f"❌ Не удалось заблокировать пользователя {target_id}")
+        return
+    
+    # Handle admin role assignment
+    if state.get('awaiting_admin_role'):
+        target_id = state['target_id']
+        role = message.text.lower().strip()
+        admin_states.pop(user_id, None)
+        
+        if role in ['отмена', 'cancel', 'назад']:
+            await message.reply("❌ Добавление администратора отменено")
+            return
+        
+        if role not in ['admin', 'superadmin']:
+            role = 'admin'
+        
+        # Get target user info
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            db._execute(cursor, 'SELECT username, first_name FROM users WHERE telegram_id = ?', (target_id,))
+            row = cursor.fetchone()
+            username = row[0] if row else None
+        
+        if db.add_admin(target_id, username, user_id, role):
+            await message.reply(f"✅ Пользователь {target_id} назначен администратором\nРоль: {role}")
+            try:
+                await bot.send_message(
+                    target_id,
+                    f"🛡️ <b>Вас назначили администратором!</b>\n\nРоль: {role}\n\nИспользуйте /admin для доступа к панели",
+                    parse_mode='HTML'
+                )
+            except:
+                pass
+        else:
+            await message.reply(f"❌ Не удалось назначить администратора {target_id}")
+        return
+    
+    # Handle user search
+    if state.get('awaiting_user_search'):
+        query = message.text.strip()
+        admin_states.pop(user_id, None)
+        
+        # Try to find by ID or username
+        target_id = None
+        if query.isdigit():
+            target_id = int(query)
+        elif query.startswith('@'):
+            username = query[1:]
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                db._execute(cursor, 'SELECT telegram_id FROM users WHERE username = ?', (username,))
+                row = cursor.fetchone()
+                if row:
+                    target_id = row[0] if db.use_postgres else row['telegram_id']
+        
+        if not target_id:
+            await message.reply(f"❌ Пользователь не найден: {query}")
+            return
+        
+        # Show user info with actions
+        await show_user_actions(message, target_id)
+        return
+
+async def show_user_actions(message: types.Message, target_id: int):
+    """Show user info with action buttons"""
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        db._execute(cursor, 'SELECT * FROM users WHERE telegram_id = ?', (target_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            await message.reply(f"❌ Пользователь {target_id} не найден")
+            return
+        
+        # Get stats
+        stats = db.get_user_stats(target_id)
+        is_user_admin = db.is_admin(target_id)
+        is_user_banned = db.is_banned(target_id)
+    
+    # Build user info text
+    if db.use_postgres:
+        user_info = {
+            'id': user[0], 'username': user[1], 'first_name': user[2],
+            'last_name': user[3], 'created_at': user[4], 'last_active': user[5]
+        }
+    else:
+        user_info = dict(user)
+    
+    text = (
+        f"👤 <b>Информация о пользователе</b>\n\n"
+        f"ID: <code>{user_info['id']}</code>\n"
+        f"Username: @{user_info.get('username', 'нет')}\n"
+        f"Имя: {user_info.get('first_name', 'нет')} {user_info.get('last_name', '')}\n"
+        f"Статус: {'🛡️ Админ' if is_user_admin else '🚫 Заблокирован' if is_user_banned else '👤 Пользователь'}\n"
+        f"Зарегистрирован: {str(user_info.get('created_at', ''))[:10]}\n"
+        f"Последняя активность: {str(user_info.get('last_active', ''))[:10]}\n\n"
+        f"📊 Сообщений: {stats['message_count']}\n"
+        f"👤 Контактов: {stats['contact_count']}"
+    )
+    
+    # Build action buttons
+    buttons = []
+    if not is_user_banned and target_id != ADMIN_ID:
+        buttons.append([InlineKeyboardButton(text="🚫 Заблокировать", callback_data=f"admin:ban:{target_id}")])
+    if is_user_banned:
+        buttons.append([InlineKeyboardButton(text="✅ Разблокировать", callback_data=f"admin:unban:{target_id}")])
+    if not is_user_admin and not is_user_banned:
+        buttons.append([InlineKeyboardButton(text="➕ Сделать админом", callback_data=f"admin:make_admin:{target_id}")])
+    if is_user_admin and target_id != ADMIN_ID:
+        buttons.append([InlineKeyboardButton(text="➖ Убрать из админов", callback_data=f"admin:remove_admin:{target_id}")])
+    
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")])
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await message.reply(text, parse_mode='HTML', reply_markup=kb)
+
 async def main():
     # Initialize scheduler
     scheduler = NewsScheduler(bot, db)
@@ -1238,6 +1597,10 @@ async def main():
     dp.message.register(admin_news_stats, Command(commands=['news_stats']))
     # Voice messages handler
     dp.message.register(handle_voice_message, lambda msg: msg.voice is not None)
+    # Admin callback handler
+    dp.callback_query.register(admin_callback_handler, lambda c: c.data and c.data.startswith('admin:'))
+    # Admin text handler (for ban reasons, broadcast, etc.)
+    dp.message.register(handle_admin_text, lambda msg: is_admin(msg.from_user.id) and msg.from_user.id in admin_states)
     # Text messages
     dp.message.register(handle_text)
     dp.callback_query.register(contact_callback_handler)
