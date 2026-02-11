@@ -565,6 +565,10 @@ class Database:
     
     def get_news_by_categories(self, categories: List[str], limit: int = 10) -> List[Dict]:
         """Get news by categories (last 3 days)"""
+        # Handle empty categories list
+        if not categories:
+            return []
+        
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
