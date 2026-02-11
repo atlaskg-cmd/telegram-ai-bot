@@ -297,9 +297,12 @@ Respond ONLY in JSON format:
                 'other': '📄'
             }.get(item['category'], '📄')
             
+            # Format published date
+            published_str = item['published'].strftime('%Y-%m-%d') if hasattr(item['published'], 'strftime') else str(item['published'])[:10]
+            
             digest_parts.append(
                 f"\n{category_emoji} <b>{item['title']}</b> {sentiment_emoji}\n"
-                f"📂 {item['category'].upper()} | 📅 {item['published'][:10]}\n"
+                f"📂 {item['category'].upper()} | 📅 {published_str}\n"
                 f"📝 {item['summary'][:200]}...\n"
                 f"🔗 <a href='{item['link']}'>Читать далее</a>\n"
             )
