@@ -1,0 +1,14 @@
+# Автоматическое разрешение конфликтов
+# Текстовые файлы - объединяем
+*.md merge=union
+*.txt merge=union
+*.py merge=union
+*.json merge=union
+
+# Бинарные файлы - берём последнюю версию
+*.db binary
+*.pkl binary
+*.pyc binary
+
+# Автоматическая нормализация окончаний строк
+* text=auto
