@@ -1,6 +1,10 @@
 """
 Multi-platform bot entry point v2.5.0
 Runs Telegram and WhatsApp bots simultaneously using shared core logic.
+
+Usage:
+  python main.py              # Run bot normally
+  python main.py --diagnose   # Run diagnostics
 """
 import logging
 import asyncio
@@ -78,6 +82,13 @@ async def main():
 
 
 if __name__ == "__main__":
+    # Check for diagnose argument
+    if len(sys.argv) > 1 and sys.argv[1] == '--diagnose':
+        print("🔍 Запуск диагностики...")
+        import subprocess
+        subprocess.run([sys.executable, 'diagnose_whatsapp.py'])
+        sys.exit(0)
+    
     # Safety check - only run on Railway or explicitly allowed
     if not IS_RAILWAY and os.environ.get('ALLOW_LOCAL_RUN') != 'true':
         logger.warning("=" * 60)
@@ -87,6 +98,7 @@ if __name__ == "__main__":
         logger.warning("=" * 60)
         print("\n[STOP] Bot stopped locally. Deploy to Railway to run.")
         print("       Or set ALLOW_LOCAL_RUN=true to test locally.\n")
+        print("       To diagnose WhatsApp config: python main.py --diagnose")
         sys.exit(0)
     
     try:

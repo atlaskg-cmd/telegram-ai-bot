@@ -91,6 +91,8 @@ class FullWhatsAppBot:
     def handle_message(self, message_data):
         """Process incoming WhatsApp message."""
         try:
+            logger.debug(f"Received message data: {message_data}")
+            
             # Extract message info
             sender_data = message_data.get("senderData", {})
             sender = sender_data.get("sender")
@@ -99,6 +101,8 @@ class FullWhatsAppBot:
             message_info = message_data.get("messageData", {})
             message_type = message_info.get("typeMessage", "")
             
+            logger.info(f"Message type: {message_type}, Sender: {sender}")
+            
             # Get text message
             text = ""
             if message_type == "textMessage":
@@ -106,14 +110,19 @@ class FullWhatsAppBot:
             elif message_type == "extendedTextMessage":
                 text = message_info.get("extendedTextMessageData", {}).get("text", "")
             
-            if not sender or not text:
+            if not sender:
+                logger.warning("No sender in message data")
+                return
+            
+            if not text:
+                logger.info(f"No text in message from {sender}, type: {message_type}")
                 return
             
             user_id = sender
             text = text.strip()
             text_lower = text.lower()
             
-            logger.info(f"WhatsApp message from {user_id} ({sender_name}): {text}")
+            logger.info(f"Processing WhatsApp message from {user_id} ({sender_name}): '{text}'")
             
             # Register user in DB
             try:
@@ -356,16 +365,35 @@ class FullWhatsAppBot:
                 
                 if data and data.get("receiptId"):
                     receipt_id = data["receiptId"]
+                    webhook_type = data.get("body", {}).get("typeWebhook", "unknown")
+                    logger.debug(f"Received notification: type={webhook_type}, receiptId={receipt_id}")
                     
                     # Process message
                     body = data.get("body", {})
                     if body.get("typeWebhook") == "incomingMessageReceived":
+                        logger.info(f"Processing incoming message notification")
                         self.handle_message(body)
+                    elif body.get("typeWebhook") == "outgoingMessageStatus":
+                        logger.debug(f"Outgoing message status: {body}")
+                    elif body.get("typeWebhook") == "stateInstanceChanged":
+                        logger.info(f"Instance state changed: {body}")
                     
                     # Delete notification after processing
                     delete_url = f"{self.api_url}/waInstance{self.id_instance}/DeleteNotification/{self.api_token}/{receipt_id}"
-                    requests.delete(delete_url, timeout=10)
+                    delete_response = requests.delete(delete_url, timeout=10)
+                    if delete_response.status_code == 200:
+                        logger.debug(f"Notification {receipt_id} deleted successfully")
+                    else:
+                        logger.warning(f"Failed to delete notification {receipt_id}: {delete_response.status_code}")
+                else:
+                    # No new notifications - this is normal
+                    pass
+            else:
+                logger.error(f"ReceiveNotification failed: HTTP {response.status_code}")
         
+        except requests.exceptions.Timeout:
+            # Timeout is normal for long polling
+            pass
         except Exception as e:
             logger.error(f"Error fetching WhatsApp notifications: {e}")
     
