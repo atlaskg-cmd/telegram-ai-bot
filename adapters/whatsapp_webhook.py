@@ -7,6 +7,7 @@ import os
 import json
 from aiohttp import web
 import asyncio
+import aiohttp
 
 # Import core modules
 from core.converter import convert_cny_to_kgs, convert_kgs_to_cny, format_conversion_result, get_currency
@@ -46,7 +47,7 @@ class WhatsAppWebhookBot:
         if not self.enabled:
             return False
 
-        import requests
+        import aiohttp
         api_url = "https://api.green-api.com"
         url = f"{api_url}/waInstance{self.id_instance}/SendMessage/{self.api_token}"
         payload = {
@@ -55,13 +56,15 @@ class WhatsAppWebhookBot:
         }
 
         try:
-            response = requests.post(url, json=payload, timeout=30)
-            if response.status_code == 200:
-                logger.info(f"WhatsApp message sent to {chat_id}")
-                return True
-            else:
-                logger.error(f"Failed to send WhatsApp message: {response.text}")
-                return False
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=30) as response:
+                    if response.status == 200:
+                        logger.info(f"WhatsApp message sent to {chat_id}")
+                        return True
+                    else:
+                        text = await response.text()
+                        logger.error(f"Failed to send WhatsApp message: {text}")
+                        return False
         except Exception as e:
             logger.error(f"Error sending WhatsApp message: {e}")
             return False
