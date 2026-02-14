@@ -86,7 +86,7 @@ class WhatsAppWebhookBot:
         )
         asyncio.create_task(self.send_message(chat_id, menu_text))
 
-    def handle_message(self, message_data):
+    async def handle_message(self, message_data):
         """Process incoming WhatsApp message from webhook."""
         try:
             logger.debug(f"Received webhook message data: {message_data}")
@@ -134,15 +134,15 @@ class WhatsAppWebhookBot:
 
                 if state == "awaiting_cny_amount":
                     result = convert_cny_to_kgs(text)
-                    asyncio.create_task(self.send_message(sender, format_conversion_result(result)))
-                    asyncio.create_task(self.send_message(sender, "💡 Отправьте *Меню* для возврата"))
+                    await self.send_message(sender, format_conversion_result(result))
+                    await self.send_message(sender, "💡 Отправьте *Меню* для возврата")
                     del self.user_states[user_id]
                     return
 
                 elif state == "awaiting_kgs_amount":
                     result = convert_kgs_to_cny(text)
-                    asyncio.create_task(self.send_message(sender, format_conversion_result(result)))
-                    asyncio.create_task(self.send_message(sender, "💡 Отправьте *Меню* для возврата"))
+                    await self.send_message(sender, format_conversion_result(result))
+                    await self.send_message(sender, "💡 Отправьте *Меню* для возврата")
                     del self.user_states[user_id]
                     return
 
@@ -155,45 +155,45 @@ class WhatsAppWebhookBot:
             elif any(x in text_lower for x in ["юань → сом", "юань в сом", "cny to kgs", "/cny_kgs",
                                                  "1", "🇨🇳", "cny", "юань"]):
                 self.user_states[user_id] = "awaiting_cny_amount"
-                asyncio.create_task(self.send_message(
+                await self.send_message(
                     sender,
                     "🇨🇳 *Юань → Сом*\n\nВведите сумму в юанях (CNY):"
-                ))
+                )
 
             # KGS to CNY
             elif any(x in text_lower for x in ["сом → юань", "сом в юань", "kgs to cny", "/kgs_cny",
                                                  "2", "🇰🇬", "kgs", "сом"]):
                 self.user_states[user_id] = "awaiting_kgs_amount"
-                asyncio.create_task(self.send_message(
+                await self.send_message(
                     sender,
                     "🇰🇬 *Сом → Юань*\n\nВведите сумму в сомах (KGS):"
-                ))
+                )
 
             # Currency rates
             elif any(x in text_lower for x in ["💰 курс", "курс", "/currency", "usd", "доллар", "3"]):
-                asyncio.create_task(self.send_message(sender, get_currency()))
-                asyncio.create_task(self.send_message(sender, "💡 Ещё команды: *Меню*"))
+                await self.send_message(sender, get_currency())
+                await self.send_message(sender, "💡 Ещё команды: *Меню*")
 
             # News
             elif any(x in text_lower for x in ["📰 новости", "новости", "/news", "4"]):
-                asyncio.create_task(self._send_news(sender))
+                await self._send_news(sender)
 
             # Digest
             elif any(x in text_lower for x in ["📰 дайджест", "дайджест", "/digest", "5"]):
-                asyncio.create_task(self._send_digest(sender))
+                await self._send_digest(sender)
 
             # Crypto
             elif any(x in text_lower for x in ["💰 криптовалюта", "крипто",
                                                 "/crypto", "btc", "bitcoin", "6"]):
-                asyncio.create_task(self._send_crypto(sender))
+                await self._send_crypto(sender)
 
             # Portfolio
             elif any(x in text_lower for x in ["📈 портфель", "портфель", "/portfolio", "7"]):
-                asyncio.create_task(self._send_portfolio(sender, user_id))
+                await self._send_portfolio(sender, user_id)
 
             # Help
             elif any(x in text_lower for x in ["❓ помощь", "помощь", "/help", "help", "8"]):
-                asyncio.create_task(self._send_help(sender))
+                await self._send_help(sender)
 
             # Quick number input (assume CNY if no state)
             elif text.replace(',', '').replace('.', '').isdigit() and float(text.replace(',', '.')) > 0:
@@ -202,20 +202,20 @@ class WhatsAppWebhookBot:
                 if amount > 1000:
                     # Probably KGS
                     result = convert_kgs_to_cny(amount)
-                    asyncio.create_task(self.send_message(sender, format_conversion_result(result)))
+                    await self.send_message(sender, format_conversion_result(result))
                 else:
                     # Probably CNY
                     result = convert_cny_to_kgs(amount)
-                    asyncio.create_task(self.send_message(sender, format_conversion_result(result)))
-                asyncio.create_task(self.send_message(sender, "💡 Отправьте *Меню* для других функций"))
+                    await self.send_message(sender, format_conversion_result(result))
+                await self.send_message(sender, "💡 Отправьте *Меню* для других функций")
 
             else:
                 # Unknown command
-                asyncio.create_task(self.send_message(
+                await self.send_message(
                     sender,
                     "❓ Не понял команду.\n\n"
                     "Отправьте *Меню* чтобы увидеть доступные команды."
-                ))
+                )
 
         except Exception as e:
             logger.error(f"Error handling WhatsApp message: {e}")
@@ -361,7 +361,7 @@ class WhatsAppWebhookBot:
             body = data.get("body", {})
             if body.get("typeWebhook") == "incomingMessageReceived":
                 logger.info("Processing incoming message from webhook")
-                self.handle_message(body)
+                await self.handle_message(body)
             elif body.get("typeWebhook") == "outgoingMessageStatus":
                 logger.debug(f"Outgoing message status: {body}")
             elif body.get("typeWebhook") == "stateInstanceChanged":
