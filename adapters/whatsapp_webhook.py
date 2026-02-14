@@ -367,21 +367,22 @@ class WhatsAppWebhookBot:
             data = await request.json()
             logger.info(f"Webhook received: {data}")
 
-            # Process message
-            body = data.get("body", {})
-            if body.get("typeWebhook") == "incomingMessageReceived":
+            # Process message - Green API sends data without "body" wrapper
+            typeWebhook = data.get("typeWebhook")
+            
+            if typeWebhook == "incomingMessageReceived":
                 logger.info("Processing incoming message from webhook")
-                await self.handle_message(body)
-            elif body.get("typeWebhook") == "outgoingMessageStatus":
-                logger.debug(f"Outgoing message status: {body}")
-            elif body.get("typeWebhook") == "stateInstanceChanged":
-                logger.info(f"Instance state changed: {body}")
+                await self.handle_message(data)
+            elif typeWebhook == "outgoingMessageStatus":
+                logger.debug(f"Outgoing message status: {data}")
+            elif typeWebhook == "stateInstanceChanged":
+                logger.info(f"Instance state changed: {data}")
 
             # Return success response to Green API
             return web.Response(status=200, text="OK")
 
         except Exception as e:
-            logger.error(f"Webhook error: {e}")
+            logger.error(f"Webhook error: {e}", exc_info=True)
             return web.Response(status=500, text="Error")
 
     def setup_routes(self, app):
