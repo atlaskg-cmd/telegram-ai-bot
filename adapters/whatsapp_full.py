@@ -19,6 +19,9 @@ from crypto_tracker import crypto
 
 logger = logging.getLogger(__name__)
 
+# Enable debug logging for WhatsApp
+logging.basicConfig(level=logging.DEBUG)
+
 
 class FullWhatsAppBot:
     """
@@ -122,7 +125,7 @@ class FullWhatsAppBot:
             text = text.strip()
             text_lower = text.lower()
             
-            logger.info(f"Processing WhatsApp message from {user_id} ({sender_name}): '{text}'")
+            logger.info(f"✅ PROCESSING: WhatsApp message from {user_id} ({sender_name}): '{text}'")
             
             # Register user in DB
             try:
@@ -360,8 +363,13 @@ class FullWhatsAppBot:
         
         try:
             response = requests.get(url, timeout=30)
+            logger.debug(f"ReceiveNotification status: {response.status_code}")
+            
             if response.status_code == 200:
                 data = response.json()
+                
+                if data:
+                    logger.info(f"📨 Received notification: {data.get('body', {}).get('typeWebhook', 'unknown')}")
                 
                 if data and data.get("receiptId"):
                     receipt_id = data["receiptId"]
@@ -400,17 +408,24 @@ class FullWhatsAppBot:
     def run(self):
         """Main loop for WhatsApp bot."""
         if not self.enabled:
-            logger.info("WhatsApp bot is disabled (no credentials)")
+            logger.error("❌ WhatsApp bot is disabled (no credentials)")
             return
         
-        logger.info("Full WhatsApp bot started!")
+        logger.info("🚀 Full WhatsApp bot started!")
+        logger.info(f"   Instance ID: {self.id_instance[:8]}...")
+        logger.info(f"   API URL: {self.api_url}")
         
+        loop_count = 0
         while True:
             try:
+                loop_count += 1
+                if loop_count % 12 == 0:  # Log every minute
+                    logger.debug(f"WhatsApp polling... (iteration {loop_count})")
+                
                 self.get_notifications()
                 time.sleep(5)  # Check every 5 seconds
             except Exception as e:
-                logger.error(f"WhatsApp bot error: {e}")
+                logger.error(f"❌ WhatsApp bot error: {e}")
                 time.sleep(10)
 
 
