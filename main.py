@@ -52,29 +52,29 @@ async def main():
 
     # Create aiohttp app for webhook support
     app = web.Application()
-    
+
     # Setup WhatsApp webhook if enabled
     whatsapp_bot = None
     if IS_RAILWAY:
         whatsapp_bot = run_whatsapp_webhook_bot(app)
-    
-    # Start Telegram bot
-    telegram_task = asyncio.create_task(TELEGRAM_RUNNER())
-    
+
     # Setup aiohttp server for webhooks
     runner = web.AppRunner(app)
     await runner.setup()
-    
+
     # Determine port (Railway provides PORT environment variable)
     port = int(os.environ.get('PORT', 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    
+
     logger.info(f"Webhook server started on port {port}")
     if IS_RAILWAY and whatsapp_bot:
         logger.info("WhatsApp bot webhook is ready to receive messages")
         logger.info(f"Webhook URL should be: https://{os.environ.get('RAILWAY_PUBLIC_DOMAIN')}/webhook-whatsapp")
-    
+
+    # Start Telegram bot after server is running
+    telegram_task = asyncio.create_task(TELEGRAM_RUNNER())
+
     # Run all tasks
     try:
         await telegram_task
