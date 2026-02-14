@@ -189,6 +189,47 @@ git push origin main
 
 > ⚠️ **ВАЖНО:** AI не помнит разговоры между сессиями. Этот раздел — память для новых сессий.
 
+### 2026-02-14 — Работа на работе
+
+**Тема:** Релиз версии 2.5.0 Multi-Platform
+
+**Обсудили:**
+- Рефакторинг бота в мульти-платформенную архитектуру
+- Telegram + WhatsApp поддержка
+- Green API для WhatsApp интеграции
+- Разделение на core/ и adapters/
+
+**Сделано:**
+- ✅ Обновлены railway.json и Procfile для main.py
+- ✅ Создана инструкция GREEN_API_SETUP.md
+- ✅ Создан core/converter.py с общей логикой
+- ✅ Созданы полные адаптеры:
+  - adapters/telegram_full.py - AI, погода, новости, крипто
+  - adapters/whatsapp_full.py - текстовый интерфейс для WhatsApp
+- ✅ main.py обновлен с выбором режима (Railway/Local)
+- ✅ Добавлены __init__.py для всех пакетов
+- ✅ WORK.md обновлен с прогрессом
+
+**Структура проекта:**
+```
+telegram-ai-bot/
+├── main.py              # Точка входа
+├── core/                # Общая бизнес-логика
+│   ├── converter.py     # CNY↔KGS конвертер
+│   └── __init__.py
+├── adapters/            # Платформенные адаптеры
+│   ├── telegram_bot.py      # Базовый Telegram
+│   ├── telegram_full.py     # Полный Telegram
+│   ├── whatsapp_bot.py      # Базовый WhatsApp
+│   ├── whatsapp_full.py     # Полный WhatsApp
+│   └── __init__.py
+└── config/              # Конфигурация
+    ├── settings.py
+    └── __init__.py
+```
+
+**Следующий шаг:** Получить Green API credentials и задеплоить
+
 ### 2026-02-12 — Работа на работе
 
 **Тема:** Kimi CLI заканчивается, ищем альтернативы
