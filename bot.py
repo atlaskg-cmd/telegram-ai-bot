@@ -2156,9 +2156,12 @@ async def main():
         scheduler_task.cancel()
 
 if __name__ == '__main__':
-    # Запускаем только на Railway (проверяем переменную окружения Railway)
-    if os.environ.get('RAILWAY_ENVIRONMENT'):
-        asyncio.run(main())
-    else:
-        logging.warning("Бот не запущен: запуск разрешён только на Railway (переменная RAILWAY_ENVIRONMENT не найдена).")
-        print("[STOP] Bot stopped locally. Deploy to Railway to run.")
+    # DEPRECATED: Этот файл больше не используется!
+    # Используйте main.py для запуска бота (мульти-платформенная версия)
+    logging.warning("=" * 60)
+    logging.warning("⚠️  bot.py устарел и больше не используется!")
+    logging.warning("    Используйте main.py для запуска бота")
+    logging.warning("    Этот файл сохранён для совместимости")
+    logging.warning("=" * 60)
+    print("\n[DEPRECATED] bot.py больше не используется.")
+    print("             Запускайте main.py вместо этого файла.\n")
