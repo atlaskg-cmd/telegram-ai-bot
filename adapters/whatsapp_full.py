@@ -39,7 +39,7 @@ class FullWhatsAppBot:
         if self.id_instance and self.api_token:
             self.enabled = True
             self.db = Database()
-            self.news_agg = NewsAggregator()
+            self.news_agg = NewsAggregator(self.db)
             logger.info(f"Full WhatsApp bot initialized (ID: {self.id_instance[:5]}...)")
         else:
             logger.warning("Green API credentials not set! WhatsApp bot disabled.")

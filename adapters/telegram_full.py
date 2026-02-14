@@ -73,7 +73,7 @@ class FullTelegramBot:
         self.db = Database()
         self.image_gen = ImageGenerator()
         self.deepseek_chat = DeepSeekChat()
-        self.news_agg = NewsAggregator()
+        self.news_agg = NewsAggregator(self.db)
         
         # API keys
         self.OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or self.config.get("openrouter_api_key", "")
