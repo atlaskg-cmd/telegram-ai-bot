@@ -71,6 +71,7 @@ class WhatsAppWebhookBot:
 
     async def send_menu(self, chat_id):
         """Send main menu."""
+        logger.info(f"Preparing to send menu to {chat_id}")
         menu_text = (
             "🤖 *Привет! Я AI бот-конвертер*\n\n"
             "*Выберите действие:*\n\n"
@@ -87,7 +88,8 @@ class WhatsAppWebhookBot:
             "❓ *Помощь* - справка\n\n"
             "_Отправьте номер пункта или текст команду_"
         )
-        await self.send_message(chat_id, menu_text)
+        result = await self.send_message(chat_id, menu_text)
+        logger.info(f"Menu sending result to {chat_id}: {result}")
 
     async def handle_message(self, message_data):
         """Process incoming WhatsApp message from webhook."""
@@ -152,7 +154,9 @@ class WhatsAppWebhookBot:
             # Handle commands and menu items
             # Menu shortcuts
             if text_lower in ["/start", "привет", "hello", "hi", "меню", "menu", "0"]:
+                logger.info(f"Processing menu command for {sender}")
                 await self.send_menu(sender)
+                logger.info(f"Menu sent to {sender}")
 
             # CNY to KGS
             elif any(x in text_lower for x in ["юань → сом", "юань в сом", "cny to kgs", "/cny_kgs",
