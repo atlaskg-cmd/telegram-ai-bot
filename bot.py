@@ -114,6 +114,7 @@ main_keyboard = ReplyKeyboardMarkup(
         [KeyboardButton(text='Курс валют'), KeyboardButton(text='Новости'), KeyboardButton(text='Контакты')],
         [KeyboardButton(text='🎨 Сгенерировать картинку'), KeyboardButton(text='📰 AI Дайджест')],
         [KeyboardButton(text='💰 Криптовалюты'), KeyboardButton(text='📈 Мой портфель')],
+        [KeyboardButton(text='🇨🇳 Юань → Сом'), KeyboardButton(text='🇰🇬 Сом → Юань')],
         [KeyboardButton(text='Переключить голос'), KeyboardButton(text='Голосовой ответ'), KeyboardButton(text='👤 Админ')]
     ],
     resize_keyboard=True,
@@ -423,6 +424,132 @@ def get_currency():
         logging.error(f"Ошибка при получении валюты: {e}")
         return "Ошибка при подключении к API валюты."
 
+# Function to get CNY (Chinese Yuan) rate
+def get_cny_rate():
+    """Get CNY to KGS exchange rate"""
+    try:
+        # Using exchangerate-api for CNY
+        url = "https://api.exchangerate-api.com/v4/latest/CNY"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            cny_to_kgs = data['rates'].get('KGS')
+            if cny_to_kgs:
+                return cny_to_kgs
+        # Fallback: try USD-based calculation
+        url_usd = "https://api.exchangerate-api.com/v4/latest/USD"
+        response_usd = requests.get(url_usd, timeout=10)
+        if response_usd.status_code == 200:
+            data_usd = response_usd.json()
+            usd_to_kgs = data_usd['rates'].get('KGS')
+            usd_to_cny = data_usd['rates'].get('CNY')
+            if usd_to_kgs and usd_to_cny:
+                return usd_to_kgs / usd_to_cny
+        return None
+    except Exception as e:
+        logging.error(f'Ошибка при получении курса юаня: {e}')
+        return None
+
+# Function to format number with spaces
+def format_number(num):
+    """Format number with spaces as thousand separators"""
+    return f"{num:,.2f}".replace(",", " ")
+
+@dp.message(lambda message: message.text == '🇨🇳 Юань → Сом')
+async def cny_to_kgs_handler(message: types.Message):
+    """Handle CNY to KGS conversion"""
+    user_id = message.from_user.id
+    if await check_banned(message):
+        return
+    
+    # Set user state to wait for amount
+    if user_id not in user_states:
+        user_states[user_id] = {}
+    user_states[user_id]['awaiting_cny_amount'] = 'cny_to_kgs'
+    
+    # Get current rate for display
+    rate = get_cny_rate()
+    if rate:
+        await message.reply(
+            f"🇨🇳 <b>Конвертер: Юань → Сом</b>\n\n"
+            f"📊 Текущий курс: <b>1 CNY = {rate:.2f} KGS</b>\n\n"
+            f"💬 Введите сумму в юанях (CNY):",
+            parse_mode='HTML'
+        )
+    else:
+        await message.reply(
+            "🇨🇳 <b>Конвертер: Юань → Сом</b>\n\n"
+            "💬 Введите сумму в юанях (CNY):",
+            parse_mode='HTML'
+        )
+
+@dp.message(lambda message: message.text == '🇰🇬 Сом → Юань')
+async def kgs_to_cny_handler(message: types.Message):
+    """Handle KGS to CNY conversion"""
+    user_id = message.from_user.id
+    if await check_banned(message):
+        return
+    
+    # Set user state to wait for amount
+    if user_id not in user_states:
+        user_states[user_id] = {}
+    user_states[user_id]['awaiting_cny_amount'] = 'kgs_to_cny'
+    
+    # Get current rate for display
+    rate = get_cny_rate()
+    if rate:
+        await message.reply(
+            f"🇰🇬 <b>Конвертер: Сом → Юань</b>\n\n"
+            f"📊 Текущий курс: <b>1 CNY = {rate:.2f} KGS</b>\n\n"
+            f"💬 Введите сумму в сомах (KGS):",
+            parse_mode='HTML'
+        )
+    else:
+        await message.reply(
+            "🇰🇬 <b>Конвертер: Сом → Юань</b>\n\n"
+            "💬 Введите сумму в сомах (KGS):",
+            parse_mode='HTML'
+        )
+
+async def process_cny_conversion(message: types.Message, conversion_type: str):
+    """Process CNY conversion after user inputs amount"""
+    try:
+        amount = float(message.text.replace(',', '.').strip())
+        if amount <= 0:
+            await message.reply("❌ Сумма должна быть больше 0!")
+            return
+        
+        rate = get_cny_rate()
+        if not rate:
+            await message.reply("❌ Не удалось получить курс валюты. Попробуйте позже.")
+            return
+        
+        if conversion_type == 'cny_to_kgs':
+            result = amount * rate
+            await message.reply(
+                f"🇨🇳 <b>Конвертация: Юань → Сом</b>\n\n"
+                f"💵 Сумма: <b>{amount:,.2f} CNY</b>\n"
+                f"📊 Курс: 1 CNY = {rate:.2f} KGS\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"💰 Результат: <b>{result:,.2f} KGS</b>",
+                parse_mode='HTML'
+            )
+        else:  # kgs_to_cny
+            result = amount / rate
+            await message.reply(
+                f"🇰🇬 <b>Конвертация: Сом → Юань</b>\n\n"
+                f"💵 Сумма: <b>{amount:,.2f} KGS</b>\n"
+                f"📊 Курс: 1 CNY = {rate:.2f} KGS\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"💰 Результат: <b>{result:,.2f} CNY</b>",
+                parse_mode='HTML'
+            )
+    except ValueError:
+        await message.reply("❌ Пожалуйста, введите число (например: 100 или 150.50)")
+    except Exception as e:
+        logging.error(f'Ошибка конвертации: {e}')
+        await message.reply("❌ Ошибка при конвертации. Попробуйте позже.")
+
 # Function to get news from Kyrgyzstan via RSS
 def get_news_kyrgyzstan():
     rss_url = config.get("rss_url", "https://kaktus.media/?rss")
@@ -494,7 +621,9 @@ async def send_welcome(message: types.Message):
             "🏔️ /weather_bokonbaevo - Погода в Боконбаево\n"
             "🌄 /weather_ton - Погода в Тоне\n\n"
             "<b>💰 Финансы:</b>\n"
-            "💰 /currency - Курс валют\n\n"
+            "💰 /currency - Курс валют\n"
+            "🇨🇳 Юань → Сом - Конвертер CNY в KGS\n"
+            "🇰🇬 Сом → Юань - Конвертер KGS в CNY\n\n"
             "<b>📰 Новостной дайджест с AI:</b>\n"
             "📋 /interests - Мои интересы\n"
             "📰 /digest - Получить дайджест сейчас\n"
@@ -662,6 +791,8 @@ async def handle_text(message: types.Message):
                 "🏔️ /weather_bokonbaevo - Погода в Боконбаево\n"
                 "🌄 /weather_ton - Погода в Тоне\n"
                 "💰 /currency - Курс валют\n"
+                "🇨🇳 Юань → Сом - Конвертер CNY в KGS\n"
+                "🇰🇬 Сом → Юань - Конвертер KGS в CNY\n"
                 "📰 /news_kyrgyzstan - Новости Киргизстана за последние 3 дня\n"
                 "🎤 /toggle_voice - Переключить голосовой режим\n"
                 "🗑 /clear_history - Очистить историю чата\n"
@@ -705,6 +836,8 @@ async def handle_text(message: types.Message):
         '📰 AI Дайджест': 'digest',
         '💰 Криптовалюты': 'crypto_menu',
         '📈 Мой портфель': 'crypto_portfolio',
+        '🇨🇳 Юань → Сом': 'cny_to_kgs',
+        '🇰🇬 Сом → Юань': 'kgs_to_cny',
         '👤 Админ': 'admin'
     }
     
@@ -747,6 +880,10 @@ async def handle_text(message: types.Message):
             await crypto_menu(message)
         elif user_input == '📈 Мой портфель':
             await crypto_portfolio(message)
+        elif user_input == '🇨🇳 Юань → Сом':
+            await cny_to_kgs_handler(message)
+        elif user_input == '🇰🇬 Сом → Юань':
+            await kgs_to_cny_handler(message)
         elif user_input == '👤 Админ':
             if is_admin(user_id):
                 await admin_panel(message)
@@ -776,6 +913,13 @@ async def handle_text(message: types.Message):
             await message.reply('❌ Ошибка: неполные данные.')
         user_states[user_id].pop('contact_name', None)
         user_states[user_id].pop('awaiting_contact_phone', None)
+        return
+    
+    # If the user is converting CNY/KGS
+    if user_states.get(user_id, {}).get('awaiting_cny_amount'):
+        conversion_type = user_states[user_id].get('awaiting_cny_amount')
+        await process_cny_conversion(message, conversion_type)
+        user_states[user_id].pop('awaiting_cny_amount', None)
         return
     
     # If the user is generating an image
