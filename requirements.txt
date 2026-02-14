@@ -16,4 +16,4 @@ psycopg2-binary
 feedparser
 
 # Optional: Async HTTP (for advanced features)
-aiohttp
+aiohttp==3.13.3
