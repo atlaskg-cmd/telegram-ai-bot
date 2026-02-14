@@ -93,6 +93,7 @@ class WhatsAppWebhookBot:
 
     async def handle_message(self, message_data):
         """Process incoming WhatsApp message from webhook."""
+        logger.info("handle_message function called")
         try:
             logger.debug(f"Received webhook message data: {message_data}")
 
@@ -113,6 +114,8 @@ class WhatsAppWebhookBot:
             elif message_type == "extendedTextMessage":
                 text = message_info.get("extendedTextMessageData", {}).get("text", "")
 
+            logger.info(f"Extracted text: '{text}'")
+
             if not sender:
                 logger.warning("No sender in message data")
                 return
@@ -125,7 +128,7 @@ class WhatsAppWebhookBot:
             text = text.strip()
             text_lower = text.lower()
 
-            logger.info(f"✅ PROCESSING: WhatsApp message from {user_id} ({sender_name}): '{text}'")
+            logger.info(f"✅ PROCESSING: WhatsApp message from {user_id} ({sender_name}): '{text}' (lowercase: '{text_lower}')")
 
             # Register user in DB
             try:
