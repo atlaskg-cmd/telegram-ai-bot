@@ -133,16 +133,25 @@ class FullTelegramBot:
         """Register all message handlers."""
         
         # ===== MAIN KEYBOARD =====
-        def get_main_keyboard():
+        def get_main_keyboard(user_id: int = None):
+            """Get main keyboard with all buttons."""
+            keyboard = [
+                [KeyboardButton(text="🌤 Погода Бишкек"), KeyboardButton(text="🌤 Погода Москва")],
+                [KeyboardButton(text="💰 Курс валют"), KeyboardButton(text="📰 Новости")],
+                [KeyboardButton(text="🇨🇳 Юань → Сом"), KeyboardButton(text="🇰🇬 Сом → Юань")],
+                [KeyboardButton(text="📇 Контакты"), KeyboardButton(text="📰 AI Дайджест")],
+                [KeyboardButton(text="🤖 AI Чат"), KeyboardButton(text="🎨 Сгенерировать картинку")],
+                [KeyboardButton(text="💰 Криптовалюта"), KeyboardButton(text="📈 Мой портфель")],
+            ]
+            
+            # Add admin or help button
+            if user_id and self.is_admin(user_id):
+                keyboard.append([KeyboardButton(text="👤 Админ")])
+            else:
+                keyboard.append([KeyboardButton(text="❓ Помощь")])
+            
             return ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="🌤 Погода Бишкек"), KeyboardButton(text="🌤 Погода Москва")],
-                    [KeyboardButton(text="💰 Курс валют"), KeyboardButton(text="🇨🇳 Юань → Сом")],
-                    [KeyboardButton(text="🇰🇬 Сом → Юань"), KeyboardButton(text="📰 Новости")],
-                    [KeyboardButton(text="🤖 AI Чат"), KeyboardButton(text="🎨 Сгенерировать картинку")],
-                    [KeyboardButton(text="💰 Криптовалюта"), KeyboardButton(text="📈 Мой портфель")],
-                    [KeyboardButton(text="👤 Админ" if self.is_admin else "❓ Помощь")]
-                ],
+                keyboard=keyboard,
                 resize_keyboard=True,
                 one_time_keyboard=False
             )
@@ -165,7 +174,7 @@ class FullTelegramBot:
                 f"💰 <b>Крипто</b> - Отслеживание криптовалют\n\n"
                 f"Выберите действие в меню ниже 👇"
             )
-            await message.reply(welcome_text, parse_mode=ParseMode.HTML, reply_markup=get_main_keyboard())
+            await message.reply(welcome_text, parse_mode=ParseMode.HTML, reply_markup=get_main_keyboard(user.id))
             
             # Register user in DB
             self.db.add_user(user.id, user.username, user.first_name, user.last_name)
@@ -443,6 +452,106 @@ class FullTelegramBot:
                 logger.error(f"Digest error: {e}")
                 await message.reply("❌ Ошибка при генерации дайджеста.")
         
+        @self.dp.message(lambda msg: msg.text and "AI Дайджест" in msg.text)
+        async def btn_digest(message: Message):
+            """Handle AI Digest button."""
+            if await self.check_banned(message):
+                return
+            
+            await self.bot.send_chat_action(message.chat.id, "typing")
+            
+            try:
+                digest = self.news_agg.generate_digest("kyrgyzstan")
+                
+                if digest:
+                    # Split if too long
+                    if len(digest) > 4000:
+                        parts = [digest[i:i+4000] for i in range(0, len(digest), 4000)]
+                        for i, part in enumerate(parts):
+                            header = f"📰 <b>AI Дайджест (часть {i+1}/{len(parts)})</b>\n\n" if len(parts) > 1 else "📰 <b>AI Дайджест</b>\n\n"
+                            await message.reply(header + part, parse_mode=ParseMode.HTML)
+                    else:
+                        await message.reply(f"📰 <b>AI Дайджест</b>\n\n{digest}", parse_mode=ParseMode.HTML)
+                else:
+                    await message.reply("❌ Не удалось сгенерировать дайджест.")
+                    
+            except Exception as e:
+                logger.error(f"Digest button error: {e}")
+                await message.reply("❌ Ошибка при генерации дайджеста.")
+        
+        # ===== CONTACTS =====
+        @self.dp.message(lambda msg: msg.text and "Контакты" in msg.text)
+        async def btn_contacts(message: Message):
+            """Handle contacts button."""
+            if await self.check_banned(message):
+                return
+            
+            user_id = message.from_user.id
+            contacts = self.db.get_contacts(user_id)
+            
+            # Create inline keyboard for contact actions
+            inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="➕ Добавить контакт", callback_data="contact_add")],
+                [InlineKeyboardButton(text="🔍 Поиск", callback_data="contact_search")],
+                [InlineKeyboardButton(text="📋 Все контакты", callback_data="contact_list")]
+            ])
+            
+            if contacts:
+                text = f"📇 <b>Ваши контакты</b> ({len(contacts)}):\n\n"
+                for c in contacts[:5]:
+                    name = c.get('name', 'Без имени')
+                    phone = c.get('phone', 'Нет телефона')
+                    text += f"• <b>{name}</b> - {phone}\n"
+                if len(contacts) > 5:
+                    text += f"\n... и ещё {len(contacts) - 5} контактов"
+            else:
+                text = "📇 <b>Контакты</b>\n\nУ вас пока нет сохранённых контактов.\n\nНажмите «Добавить контакт» чтобы создать первый контакт."
+            
+            await message.reply(text, parse_mode=ParseMode.HTML, reply_markup=inline_kb)
+        
+        @self.dp.callback_query(lambda c: c.data and c.data.startswith("contact_"))
+        async def callback_contacts(callback_query: types.CallbackQuery):
+            """Handle contact callbacks."""
+            action = callback_query.data.replace("contact_", "")
+            user_id = callback_query.from_user.id
+            
+            if action == "add":
+                self.user_states[user_id] = "awaiting_contact_name"
+                await callback_query.message.edit_text(
+                    "➕ <b>Добавление контакта</b>\n\n"
+                    "Введите имя контакта:",
+                    parse_mode=ParseMode.HTML
+                )
+            
+            elif action == "search":
+                self.user_states[user_id] = "awaiting_contact_search"
+                await callback_query.message.edit_text(
+                    "🔍 <b>Поиск контакта</b>\n\n"
+                    "Введите имя или телефон для поиска:",
+                    parse_mode=ParseMode.HTML
+                )
+            
+            elif action == "list":
+                contacts = self.db.get_contacts(user_id)
+                if contacts:
+                    text = f"📋 <b>Все контакты</b> ({len(contacts)}):\n\n"
+                    for c in contacts:
+                        name = c.get('name', 'Без имени')
+                        phone = c.get('phone', 'Нет телефона')
+                        text += f"• <b>{name}</b>\n  📞 {phone}\n\n"
+                else:
+                    text = "📋 У вас нет сохранённых контактов."
+                
+                await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML)
+            
+            await callback_query.answer()
+        
+        # ===== HELP =====
+        @self.dp.message(lambda msg: msg.text and "Помощь" in msg.text)
+        async def btn_help(message: Message):
+            """Handle help button."""
+            await cmd_help(message)
+        
         # ===== CRYPTO =====
         @self.dp.message(lambda msg: msg.text and "Криптовалюта" in msg.text)
         async def btn_crypto(message: Message):
@@ -575,12 +684,65 @@ class FullTelegramBot:
                 
                 if state == "awaiting_cny_amount":
                     result = convert_cny_to_kgs(text)
-                    await message.reply(format_conversion_result(result), parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_keyboard())
+                    await message.reply(format_conversion_result(result), parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_keyboard(user_id))
                     return
                 
                 elif state == "awaiting_kgs_amount":
                     result = convert_kgs_to_cny(text)
-                    await message.reply(format_conversion_result(result), parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_keyboard())
+                    await message.reply(format_conversion_result(result), parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_keyboard(user_id))
+                    return
+                
+                # ===== CONTACT STATES =====
+                elif state == "awaiting_contact_name":
+                    # Store temp contact name and ask for phone
+                    self.user_states[user_id] = {"state": "awaiting_contact_phone", "name": text}
+                    await message.reply(
+                        f"➕ <b>Добавление контакта</b>\n\n"
+                        f"Имя: <b>{text}</b>\n\n"
+                        f"Теперь введите номер телефона:",
+                        parse_mode=ParseMode.HTML
+                    )
+                    return
+                
+                elif isinstance(state, dict) and state.get("state") == "awaiting_contact_phone":
+                    # Save contact
+                    name = state.get("name", "Без имени")
+                    phone = text
+                    
+                    try:
+                        self.db.add_contact(name, phone, user_id)
+                        await message.reply(
+                            f"✅ <b>Контакт сохранён!</b>\n\n"
+                            f"📇 <b>{name}</b>\n"
+                            f"📞 {phone}",
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=get_main_keyboard(user_id)
+                        )
+                    except Exception as e:
+                        logger.error(f"Error saving contact: {e}")
+                        await message.reply("❌ Ошибка при сохранении контакта.", reply_markup=get_main_keyboard(user_id))
+                    return
+                
+                elif state == "awaiting_contact_search":
+                    # Search contacts (filter by user's contacts)
+                    all_contacts = self.db.get_contacts(user_id)
+                    query = text.lower()
+                    contacts = [c for c in all_contacts if query in c.get('name', '').lower() or query in c.get('phone', '').lower()]
+                    
+                    if contacts:
+                        result_text = f"🔍 <b>Результаты поиска</b> '{text}':\n\n"
+                        for c in contacts:
+                            name = c.get('name', 'Без имени')
+                            phone = c.get('phone', 'Нет телефона')
+                            note = c.get('note', '')
+                            result_text += f"📇 <b>{name}</b>\n📞 {phone}"
+                            if note:
+                                result_text += f"\n📝 {note}"
+                            result_text += "\n\n"
+                    else:
+                        result_text = f"🔍 По запросу '{text}' ничего не найдено."
+                    
+                    await message.reply(result_text, parse_mode=ParseMode.HTML, reply_markup=get_main_keyboard(user_id))
                     return
             
             # Check if it's a direct question (AI chat without /gpt4)
@@ -592,7 +754,7 @@ class FullTelegramBot:
                     f"<code>/gpt4 {text}</code>\n\n"
                     f"Или выберите действие в меню 👇",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=get_main_keyboard()
+                    reply_markup=get_main_keyboard(user_id)
                 )
                 return
             
@@ -600,7 +762,7 @@ class FullTelegramBot:
             await message.reply(
                 "❓ Не понял команду.\n\n"
                 "Выберите действие в меню или используйте /help",
-                reply_markup=get_main_keyboard()
+                reply_markup=get_main_keyboard(user_id)
             )
     
     async def run(self):

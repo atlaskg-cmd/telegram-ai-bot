@@ -495,6 +495,28 @@ class Database:
             else:
                 return [{"id": row["id"], "name": row["name"], "phone": row["phone"]} for row in rows]
     
+    def get_contacts(self, user_id: int) -> List[Dict]:
+        """Get contacts for specific user"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.use_postgres:
+                cursor.execute('''
+                    SELECT id, name, phone FROM contacts 
+                    WHERE added_by = %s 
+                    ORDER BY name
+                ''', (user_id,))
+            else:
+                cursor.execute('''
+                    SELECT id, name, phone FROM contacts 
+                    WHERE added_by = ? 
+                    ORDER BY name
+                ''', (user_id,))
+            rows = cursor.fetchall()
+            if self.use_postgres:
+                return [{"id": row[0], "name": row[1], "phone": row[2]} for row in rows]
+            else:
+                return [{"id": row["id"], "name": row["name"], "phone": row["phone"]} for row in rows]
+    
     def get_contact_by_id(self, contact_id: int) -> Optional[Dict]:
         """Get single contact by ID"""
         with self.get_connection() as conn:
