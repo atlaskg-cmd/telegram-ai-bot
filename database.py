@@ -65,9 +65,17 @@ class Database:
     
     def _execute(self, cursor, query: str, params: tuple = ()):
         """Execute query with automatic ? to %s conversion for PostgreSQL"""
-        if self.use_postgres:
-            # Convert ? to %s for PostgreSQL
-            query = query.replace('?', '%s')
+        if self.use_postgres and params:
+            # Count placeholders and replace with %s for PostgreSQL
+            # Only replace if we have parameters to avoid replacing literal '?' in queries
+            param_count = query.count('?')
+            if param_count > 0:
+                # Replace each '?' with '%s' in sequence
+                query = query.replace('?', '%s', param_count)
+        elif self.use_postgres:
+            # If no params but using postgres, make sure no '?' remain
+            pass  # query remains unchanged
+        
         cursor.execute(query, params)
     
     def init_db(self):
@@ -334,13 +342,16 @@ class Database:
     
     # ========== USERS ==========
     
-    def add_or_update_user(self, telegram_id: int, username: str = None, 
+    def add_or_update_user(self, telegram_id: int, username: str = None,
                           first_name: str = None, last_name: str = None):
         """Add new user or update existing"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            
+
+            # Use _execute method for consistent parameter handling
             if self.use_postgres:
+                # For PostgreSQL, we need to use the direct cursor.execute with %s placeholders
+                # since ON CONFLICT clause is specific to PostgreSQL
                 cursor.execute('''
                     INSERT INTO users (telegram_id, username, first_name, last_name)
                     VALUES (%s, %s, %s, %s)
@@ -351,7 +362,8 @@ class Database:
                         last_active = CURRENT_TIMESTAMP
                 ''', (telegram_id, username, first_name, last_name))
             else:
-                cursor.execute('''
+                # For SQLite, use _execute with ? placeholders
+                self._execute(cursor, '''
                     INSERT INTO users (telegram_id, username, first_name, last_name)
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(telegram_id) DO UPDATE SET
@@ -360,7 +372,7 @@ class Database:
                         last_name = excluded.last_name,
                         last_active = CURRENT_TIMESTAMP
                 ''', (telegram_id, username, first_name, last_name))
-            
+
             # Create default settings for new user
             if self.use_postgres:
                 cursor.execute('''
@@ -369,11 +381,11 @@ class Database:
                     ON CONFLICT (user_id) DO NOTHING
                 ''', (telegram_id,))
             else:
-                cursor.execute('''
+                self._execute(cursor, '''
                     INSERT OR IGNORE INTO user_settings (user_id, voice_mode)
                     VALUES (?, 0)
                 ''', (telegram_id,))
-            
+
             conn.commit()
     
     def get_user_count(self) -> int:
@@ -405,6 +417,19 @@ class Database:
         """Add message to chat history"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            # Ensure user exists before adding message to prevent FK constraint violations
+            # Check if user exists
+            self._execute(cursor, 'SELECT telegram_id FROM users WHERE telegram_id = ?', (user_id,))
+            user_exists = cursor.fetchone()
+            
+            if not user_exists:
+                # Add user with minimal info to satisfy FK constraint
+                self._execute(cursor, '''
+                    INSERT INTO users (telegram_id, created_at, last_active)
+                    VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT (telegram_id) DO NOTHING
+                ''', (user_id,))
+            
             self._execute(cursor, '''
                 INSERT INTO chat_history (user_id, role, content)
                 VALUES (?, ?, ?)
@@ -441,6 +466,19 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+                # Ensure user exists before adding contact to prevent FK constraint violations
+                # Check if user exists
+                self._execute(cursor, 'SELECT telegram_id FROM users WHERE telegram_id = ?', (added_by,))
+                user_exists = cursor.fetchone()
+                
+                if not user_exists:
+                    # Add user with minimal info to satisfy FK constraint
+                    self._execute(cursor, '''
+                        INSERT INTO users (telegram_id, created_at, last_active)
+                        VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT (telegram_id) DO NOTHING
+                    ''', (added_by,))
+                
                 self._execute(cursor, '''
                     INSERT INTO contacts (name, phone, added_by)
                     VALUES (?, ?, ?)
@@ -729,6 +767,20 @@ class Database:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 
+                # Ensure user exists before adding interest to prevent FK constraint violations
+                # Check if user exists
+                self._execute(cursor, 'SELECT telegram_id FROM users WHERE telegram_id = ?', (user_id,))
+                user_exists = cursor.fetchone()
+                
+                if not user_exists:
+                    # Add user with minimal info to satisfy FK constraint
+                    self._execute(cursor, '''
+                        INSERT INTO users (telegram_id, created_at, last_active)
+                        VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT (telegram_id) DO NOTHING
+                    ''', (user_id,))
+                
+                # Now add the interest
                 if self.use_postgres:
                     cursor.execute('''
                         INSERT INTO user_interests (user_id, category)
@@ -740,7 +792,7 @@ class Database:
                         INSERT OR IGNORE INTO user_interests (user_id, category)
                         VALUES (?, ?)
                     ''', (user_id, category.lower()))
-                
+
                 conn.commit()
                 return True
         except Exception as e:
@@ -1122,6 +1174,20 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+                
+                # Ensure user exists before adding crypto to prevent FK constraint violations
+                # Check if user exists
+                self._execute(cursor, 'SELECT telegram_id FROM users WHERE telegram_id = ?', (user_id,))
+                user_exists = cursor.fetchone()
+                
+                if not user_exists:
+                    # Add user with minimal info to satisfy FK constraint
+                    self._execute(cursor, '''
+                        INSERT INTO users (telegram_id, created_at, last_active)
+                        VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT (telegram_id) DO NOTHING
+                    ''', (user_id,))
+                
                 if self.use_postgres:
                     cursor.execute('''
                         INSERT INTO crypto_portfolio (user_id, coin_id, symbol, amount, avg_buy_price)
