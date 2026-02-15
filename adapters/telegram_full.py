@@ -407,7 +407,7 @@ class FullTelegramBot:
             
             try:
                 # Get news for Kyrgyzstan by default
-                news = self.news_agg.get_news_by_category("kyrgyzstan", limit=5)
+                news = self.db.get_news_by_categories(["kyrgyzstan"], limit=5)
                 
                 if not news:
                     await message.reply("📰 Новости временно недоступны. Попробуйте позже.")
@@ -416,7 +416,7 @@ class FullTelegramBot:
                 text = "📰 <b>Последние новости Кыргызстана</b>\n\n"
                 for i, item in enumerate(news, 1):
                     title = item.get('title', 'Без заголовка')
-                    source = item.get('source', 'Неизвестный источник')
+                    source = item.get('source_name', 'Неизвестный источник')
                     text += f"{i}. <b>{title}</b>\n   📌 {source}\n\n"
                 
                 text += "💡 Используйте <code>/digest</code> для AI анализа новостей"
