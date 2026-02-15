@@ -28,6 +28,8 @@ class Database:
         self.database_url = os.environ.get("DATABASE_URL")
         self.use_postgres = False
         
+        logging.info(f"DATABASE_URL raw from os.environ: {os.environ.get("DATABASE_URL", "<NOT SET>")}")
+        logging.info(f"DATABASE_URL assigned to self.database_url: {self.database_url}")
         logging.info(f"DATABASE_URL exists: {bool(self.database_url)}")
         if self.database_url:
             logging.info(f"DATABASE_URL starts with: {self.database_url[:20]}...")
@@ -66,17 +68,26 @@ class Database:
     def _execute(self, cursor, query: str, params: tuple = ()):
         """Execute query with automatic ? to %s conversion for PostgreSQL"""
         if self.use_postgres and params:
-            # Count placeholders and replace with %s for PostgreSQL
-            # Only replace if we have parameters to avoid replacing literal '?' in queries
-            param_count = query.count('?')
-            if param_count > 0:
-                # Replace each '?' with '%s' in sequence
-                query = query.replace('?', '%s', param_count)
-        elif self.use_postgres:
-            # If no params but using postgres, make sure no '?' remain
-            pass  # query remains unchanged
+            # Replace each '?' with '%s' for PostgreSQL
+            # Count the number of ? placeholders and replace them with %s
+            query = self._convert_placeholders(query, len(params))
         
         cursor.execute(query, params)
+
+    def _convert_placeholders(self, query: str, param_count: int) -> str:
+        """Convert ? placeholders to %s for PostgreSQL, only replacing the first param_count occurrences"""
+        if not self.use_postgres or param_count == 0:
+            return query
+        
+        # Replace only the first param_count occurrences of '?' with '%s'
+        result = query
+        for _ in range(param_count):
+            pos = result.find('?')
+            if pos == -1:
+                break
+            result = result[:pos] + '%s' + result[pos+1:]
+        
+        return result
     
     def init_db(self):
         """Initialize database tables"""
