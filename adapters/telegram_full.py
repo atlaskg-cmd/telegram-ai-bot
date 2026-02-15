@@ -487,7 +487,7 @@ class FullTelegramBot:
                 return
             
             user_id = message.from_user.id
-            contacts = self.db.get_contacts(user_id)
+            contacts = self.db.get_all_contacts()
             
             # Create inline keyboard for contact actions
             inline_kb = InlineKeyboardMarkup(inline_keyboard=[
