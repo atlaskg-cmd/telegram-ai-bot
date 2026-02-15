@@ -14,7 +14,33 @@
 
 ## 🔄 Статус работы
 
-### Текущая сессия: 2026-02-15 (вечер) → Fix: Telegram Menu Buttons ✅ ИСПРАВЛЕНО
+### Текущая сессия: 2026-02-15 (вечер) → Fix: Telegram Errors ✅ ИСПРАВЛЕНО
+**Где работаем:** 🏠 Дома (личный ПК)  
+**Что делаем:** Исправление ошибок AttributeError в Telegram боте
+
+#### 🐛 Проблемы (из логов Railway)
+1. `AttributeError: 'Database' object has no attribute 'add_user'`
+2. `AttributeError: 'CryptoTracker' object has no attribute 'get_portfolio'`
+3. `AttributeError: 'Database' object has no attribute 'get_stats'`
+
+#### ✅ Сделано
+- Исправлен `adapters/telegram_full.py`:
+  - `self.db.add_user` ➡️ `self.db.add_or_update_user`
+  - `crypto.get_portfolio(user_id)` ➡️ `self.db.get_user_portfolio(user_id)`
+  - `self.db.get_stats()` ➡️ `self.db.get_admin_stats()`
+- Проверены файлы `database.py` и `crypto_tracker.py`
+
+#### 📁 Изменённые файлы
+- `adapters/telegram_full.py` - исправлены вызовы методов
+- `WORK.md` - обновлен лог
+
+#### 🚀 Статус деплоя
+- ✅ Закоммичено и запушено
+- ⏳ Ожидание деплоя на Railway
+
+---
+
+### Предыдущая сессия: 2026-02-15 (вечер) → Fix: Telegram Menu Buttons ✅ ИСПРАВЛЕНО
 **Где работаем:** 🏠 Дома (личный ПК)  
 **Что делаем:** Исправление меню Telegram бота - пропали кнопки
 

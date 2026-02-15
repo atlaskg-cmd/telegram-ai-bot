@@ -177,7 +177,7 @@ class FullTelegramBot:
             await message.reply(welcome_text, parse_mode=ParseMode.HTML, reply_markup=get_main_keyboard(user.id))
             
             # Register user in DB
-            self.db.add_user(user.id, user.username, user.first_name, user.last_name)
+            self.db.add_or_update_user(user.id, user.username, user.first_name, user.last_name)
         
         @self.dp.message(Command("help"))
         async def cmd_help(message: Message):
@@ -585,7 +585,7 @@ class FullTelegramBot:
                 return
             
             user_id = message.from_user.id
-            portfolio = crypto.get_portfolio(user_id)
+            portfolio = self.db.get_user_portfolio(user_id)
             
             if not portfolio:
                 await message.reply(
@@ -627,7 +627,7 @@ class FullTelegramBot:
                 await message.reply("⛔ У вас нет доступа к админ-панели.")
                 return
             
-            stats = self.db.get_stats()
+            stats = self.db.get_admin_stats()
             
             text = (
                 "👤 <b>Админ-панель</b>\n\n"
