@@ -40,10 +40,14 @@ class FullWhatsAppBot:
         
         # Initialize services
         if self.id_instance and self.api_token:
-            self.enabled = True
-            self.db = Database()
-            self.news_agg = NewsAggregator(self.db)
-            logger.info(f"Full WhatsApp bot initialized (ID: {self.id_instance[:5]}...)")
+            try:
+                self.enabled = True
+                self.db = Database()
+                self.news_agg = NewsAggregator(self.db)
+                logger.info(f"✅ Full WhatsApp bot initialized (ID: {self.id_instance[:5]}...)")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize WhatsApp bot: {e}")
+                self.enabled = False
         else:
             logger.warning("Green API credentials not set! WhatsApp bot disabled.")
             self.enabled = False
