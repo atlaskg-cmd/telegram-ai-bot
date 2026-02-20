@@ -1,0 +1,37 @@
+# Flutter
+.dart_tool/
+.packages
+build/
+pubspec.lock
+
+# macOS
+**/ios/**/Pods/
+**/macos/**/Pods/
+**/.symlinks/
+
+# Android
+**/android/**/.gradle/
+**/android/**/build/
+**/android/**/.idea/
+**/android/local.properties
+
+# iOS
+**/ios/**/.idea/
+**/ios/**/xcuserdata/
+**/ios/Pods/
+
+# Xcode
+**/*.xcworkspace
+!*.xcworkspace
+**/*.xcscheme
+
+# VS Code
+.vscode/
+
+# IntelliJ
+.idea/
+
+# Misc
+*.log
+*.tmp
+.DS_Store
