@@ -97,7 +97,7 @@ class MainCurrencyRates {
   }
 
   factory MainCurrencyRates.empty() {
-    return const MainCurrencyRates(
+    return MainCurrencyRates(
       usdToKgs: 0,
       usdToRub: 0,
       cnyToKgs: 0,

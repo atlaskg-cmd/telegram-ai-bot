@@ -43,10 +43,10 @@ dependencies:
   share_plus: ^7.2.1
   path_provider: ^2.1.2
   xml: ^6.5.0
-  
-  # Push Notifications
-  firebase_core: ^2.24.2
-  firebase_messaging: ^14.7.9
+
+  # Push Notifications (отключено для веб-совместимости)
+  # firebase_core: ^2.24.2
+  # firebase_messaging: ^14.7.9
   
   # Voice & Audio
   speech_to_text: ^6.6.0
@@ -71,35 +71,26 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  
+
   assets:
     - assets/images/
     - assets/icons/
-  
-  fonts:
-    - family: Roboto
-      fonts:
-        - asset: fonts/Roboto-Regular.ttf
-        - asset: fonts/Roboto-Bold.ttf
-          weight: 700
-    - family: San Francisco
-      fonts:
-        - asset: fonts/SF-Pro-Text-Regular.ttf
-        - asset: fonts/SF-Pro-Text-Bold.ttf
-          weight: 700
 
-# Flutter Launcher Icons
-flutter_launcher_icons:
-  android: "launcher_icon"
-  ios: true
-  image_path: "assets/icons/app_icon.png"
-  adaptive_icon_background: "#4A90D9"
-  adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
+# Примечание: Шрифты используются системные (Material Design)
+# Для кастомных шрифтов добавьте .ttf файлы в папку fonts/
 
-# Flutter Native Splash
-flutter_native_splash:
-  color: "#4A90D9"
-  image: "assets/icons/splash_icon.png"
-  android: true
-  ios: true
-  web: false
+# Flutter Launcher Icons (раскомментировать для сборки)
+# flutter_launcher_icons:
+#   android: "launcher_icon"
+#   ios: true
+#   image_path: "assets/icons/app_icon.png"
+#   adaptive_icon_background: "#4A90D9"
+#   adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
+
+# Flutter Native Splash (раскомментировать для сборки)
+# flutter_native_splash:
+#   color: "#4A90D9"
+#   image: "assets/icons/splash_icon.png"
+#   android: true
+#   ios: true
+#   web: false

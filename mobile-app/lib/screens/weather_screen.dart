@@ -169,7 +169,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
               const SizedBox(height: 32),
               // Детали
               _DetailRow(
-                icon: Icons.thermometer_outlined,
+                icon: Icons.thermostat,
                 label: 'Ощущается как',
                 value: '${weather.feelsLike.toStringAsFixed(0)}°',
               ),

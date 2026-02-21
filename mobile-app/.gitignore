@@ -1,37 +1,124 @@
-# Flutter
-.dart_tool/
-.packages
-build/
-pubspec.lock
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
 
-# macOS
-**/ios/**/Pods/
-**/macos/**/Pods/
-**/.symlinks/
-
-# Android
-**/android/**/.gradle/
-**/android/**/build/
-**/android/**/.idea/
-**/android/local.properties
-
-# iOS
-**/ios/**/.idea/
-**/ios/**/xcuserdata/
-**/ios/Pods/
-
-# Xcode
-**/*.xcworkspace
-!*.xcworkspace
-**/*.xcscheme
-
-# VS Code
-.vscode/
-
-# IntelliJ
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
 .idea/
 
-# Misc
-*.log
-*.tmp
-.DS_Store
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# iOS/macOS
+**/ios/**/*.mode1v3
+**/ios/**/*.mode2v3
+**/ios/**/*.moved-aside
+**/ios/**/*.pbxuser
+**/ios/**/*.perspectivev3
+**/ios/**/*sync/
+**/ios/**/.sconsign.dblite
+**/ios/**/.tags*
+**/ios/**/.vagrant/
+**/ios/**/DerivedData/
+**/ios/**/Icon?
+**/ios/**/Pods/
+**/ios/**/.symlinks/
+**/ios/**/profile
+**/ios/**/xcuserdata
+**/ios/.generated/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+
+# Coverage
+coverage/
+
+# Exceptions to above rules.
+!/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
+!/dev/ci/**/Gemfile.lock
+!/dev/integration_tests/ios_add2app_life_cycle/**/Podfile.lock
+!/dev/benchmarks/platform_channels_benchmarks/ios/Podfile.lock
+!/dev/benchmarks/platform_channels_benchmarks/ios/Pods/
+!/dev/integration_tests/**/Podfile.lock
+!/dev/integration_tests/**/Pods/
+!/dev/integration_tests/ios_host_app/**/Podfile.lock
+!/dev/integration_tests/ios_host_app/**/Pods/
+!/dev/integration_tests/ios_add2app_life_cycle/**/Podfile.lock
+!/dev/integration_tests/ios_add2app_life_cycle/**/Pods/
+!/dev/manual_tests/ios/Podfile.lock
+!/dev/manual_tests/ios/Pods/
+!/dev/benchmarks/macrobenchmarks/ios/Podfile.lock
+!/dev/benchmarks/macrobenchmarks/ios/Pods/
+!/dev/benchmarks/complex_layout/ios/Podfile.lock
+!/dev/benchmarks/complex_layout/ios/Pods/
+!/dev/manual_tests/android/app/src/main/java/
+!/dev/benchmarks/test_apps/stocks/ios/Podfile.lock
+!/dev/benchmarks/test_apps/stocks/ios/Pods/
+!/dev/integration_tests/external_textures/ios/Podfile.lock
+!/dev/integration_tests/external_textures/ios/Pods/
+!**/ios/**/default.mode1v3
+!**/ios/**/default.mode2v3
+!**/ios/**/default.pbxuser
+!**/ios/**/default.perspectivev3
+!**/ios/**/default.subproj
+!**/ios/**/project.pbxproj
+!**/ios/**/project.xcworkspace/
+!**/ios/**/xcshareddata/
+!**/ios/**/xcuserdata/
+!**/ios/**/Flutter/Flutter.framework
+!**/ios/**/Flutter/Flutter.podspec
+!**/ios/**/Flutter/Generated.xcconfig
+!**/ios/**/Flutter/ephemeral
+!**/ios/**/Flutter/app.flx
+!**/ios/**/Flutter/app.zip
+!**/ios/**/Flutter/flutter_assets/
+!**/ios/**/Flutter/flutter_export_environment.sh
+!**/ios/**/Flutter/Debug.xcconfig
+!**/ios/**/Flutter/Release.xcconfig
+
+# Local configuration
+.env
+local.properties
+android/key.properties

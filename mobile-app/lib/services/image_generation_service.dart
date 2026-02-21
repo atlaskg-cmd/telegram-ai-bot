@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
+import 'openrouter_service.dart';
 
 /// Сервис генерации изображений (Multi-provider fallback)
 class ImageGenerationService {

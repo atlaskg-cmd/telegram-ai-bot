@@ -2,8 +2,11 @@ include: package:flutter_lints/flutter.yaml
 
 linter:
   rules:
-    prefer_const_constructors: true
-    prefer_const_literals_to_create_immutables: true
-    avoid_print: false
-    use_key_in_widget_constructors: true
-    prefer_single_quotes: true
+    - prefer_const_constructors
+    - prefer_const_literals_to_create_immutables
+    - avoid_print
+    - prefer_single_quotes
+    - sort_child_properties_last
+    - use_key_in_widget_constructors
+    - prefer_final_locals
+    - avoid_unnecessary_containers

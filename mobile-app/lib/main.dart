@@ -79,7 +79,7 @@ class AiBotApp extends StatelessWidget {
         elevation: 0,
         scrolledUnderElevation: 1,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
@@ -91,7 +91,7 @@ class AiBotApp extends StatelessWidget {
         ),
         filled: true,
       ),
-      floatingActionButtonTheme: const FloatingActionButtonTheme(
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
         elevation: 4,
       ),
     );
@@ -109,7 +109,7 @@ class AiBotApp extends StatelessWidget {
         elevation: 0,
         scrolledUnderElevation: 1,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
@@ -121,7 +121,7 @@ class AiBotApp extends StatelessWidget {
         ),
         filled: true,
       ),
-      floatingActionButtonTheme: const FloatingActionButtonTheme(
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
         elevation: 4,
       ),
     );

@@ -9,10 +9,10 @@ class StorageService {
   factory StorageService() => _instance;
   StorageService._internal();
 
-  static const String _apiKeyBox = 'api_keys';
-  static const String _settingsBox = 'settings';
-  static const String _chatHistoryBox = 'chat_history';
-  static const String _portfolioBox = 'portfolio';
+  static const String _apiKeyBoxName = 'api_keys';
+  static const String _settingsBoxName = 'settings';
+  static const String _chatHistoryBoxName = 'chat_history';
+  static const String _portfolioBoxName = 'portfolio';
 
   SharedPreferences? _prefs;
   Box? _apiKeysBox;
@@ -28,10 +28,10 @@ class StorageService {
 
       await Hive.initFlutter();
 
-      _apiKeysBox = await Hive.openBox(_apiKeyBox);
-      _settingsBox = await Hive.openBox(_settingsBox);
-      _chatHistoryBox = await Hive.openBox(_chatHistoryBox);
-      _portfolioBox = await Hive.openBox(_portfolioBox);
+      _apiKeysBox = await Hive.openBox(_apiKeyBoxName);
+      _settingsBox = await Hive.openBox(_settingsBoxName);
+      _chatHistoryBox = await Hive.openBox(_chatHistoryBoxName);
+      _portfolioBox = await Hive.openBox(_portfolioBoxName);
 
       debugPrint('[Storage] Hive boxes инициализированы');
     } catch (e) {
@@ -131,12 +131,12 @@ class StorageService {
   Future<void> saveMessage(Message message) async {
     final key = 'msg_${message.id}';
     await _chatHistoryBox?.put(key, message.toJson());
-    
+
     // Сохраняем порядок сообщений
     final history = getChatHistory();
     if (!history.any((m) => m.id == message.id)) {
-      history.add(message.id);
-      await _chatHistoryBox?.put('history_order', history);
+      history.add(message);
+      await _chatHistoryBox?.put('history_order', history.map((m) => m.id).toList());
     }
   }
 
