@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Local config (не пушим секреты!)
+config.local.json
+config.json
+
+# Temp files
+*.tmp
+*.temp
+
+.qwen/
+gha-creds-*.json

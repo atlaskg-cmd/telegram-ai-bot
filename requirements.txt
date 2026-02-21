@@ -1,0 +1,19 @@
+# Core dependencies
+requests>=2.28.0
+python-dotenv>=0.19.0
+
+# Telegram
+aiogram==3.23.0
+
+# Optional: Text-to-Speech
+gtts
+edge-tts
+
+# Optional: Database
+psycopg2-binary
+
+# Optional: News parsing
+feedparser
+
+# Optional: Async HTTP (for advanced features)
+aiohttp==3.13.3
