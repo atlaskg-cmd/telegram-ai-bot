@@ -28,3 +28,17 @@ config.json
 
 .qwen/
 gha-creds-*.json
+
+# Git for Windows system folders (не пушим!)
+cmd/
+etc/
+mingw64/
+usr/
+telegram-ai-bot/
+
+# Bot database
+*.db
+
+# Aider history
+.aider.chat.history.md
+.aider.input.history
