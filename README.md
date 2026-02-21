@@ -259,7 +259,7 @@ tegi/
 - 📱 Платформ: 5 (Telegram, WhatsApp, iOS, Android, Web)
 - 📁 Файлов: ~150+
 - 💻 Строк кода: ~10,000+
-- 🎯 Коммитов: 100
+- 🎯 Коммитов: 100+
 
 ### Version 2.5.0 - Multi-Platform (Telegram + WhatsApp) (2025-02-15)
 - **Added:** 📱 WhatsApp интеграция через Green API webhook
