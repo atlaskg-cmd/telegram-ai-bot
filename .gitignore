@@ -42,3 +42,7 @@ telegram-ai-bot/
 # Aider history
 .aider.chat.history.md
 .aider.input.history
+.aider*
+
+# OpenRouter cache
+openrouter/
