@@ -13,6 +13,7 @@ from datetime import datetime
 
 # Import core modules
 from core.converter import convert_cny_to_kgs, convert_kgs_to_cny, format_conversion_result, get_currency
+from bot import get_weather
 from database import Database
 from news_aggregator import NewsAggregator
 from crypto_tracker import crypto
@@ -84,6 +85,9 @@ class FullWhatsAppBot:
             "🇨🇳 Юань → Сом\n"
             "🇰🇬 Сом → Юань\n"
             "💰 Курс USD\n\n"
+            "🌤 *Погода:*\n"
+            "☁️ Погода Бишкек\n"
+            "☁️ Погода Москва\n\n"
             "📰 *Информация:*\n"
             "📰 Новости\n"
             "📰 Дайджест (AI)\n\n"
@@ -182,6 +186,16 @@ class FullWhatsAppBot:
             elif any(x in text_lower for x in ["💰 курс", "курс", "/currency", "usd", "доллар", "3"]):
                 self.send_message(sender, get_currency())
                 self.send_message(sender, "💡 Ещё команды: *Меню*")
+
+            # Weather
+            elif "погода бишкек" in text_lower:
+                self.send_message(sender, get_weather("Bishkek"))
+            
+            elif "погода москва" in text_lower:
+                self.send_message(sender, get_weather("Moscow"))
+
+            elif "погода иссык-куль" in text_lower:
+                self.send_message(sender, get_weather("Issyk-Kul"))
             
             # News
             elif any(x in text_lower for x in ["📰 новости", "новости", "/news", "4"]):
