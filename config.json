@@ -1,15 +1,21 @@
 {
   "models": [
     "openrouter/free",
-    "deepseek/deepseek-r1-0528:free",
+    "stepfun/step-3.5-flash:free",
     "arcee-ai/trinity-large-preview:free",
-    "tngtech/deepseek-tng-r1t2-chimera:free",
-    "stepfun/step-3.5-flash:free"
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1-0528:free",
+    "google/gemma-3-27b-it:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "qwen/qwen3-coder:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free"
   ],
   "default_model": "openrouter/free",
   "fallback_models": [
-    "deepseek/deepseek-r1-0528:free",
-    "arcee-ai/trinity-large-preview:free"
+    "stepfun/step-3.5-flash:free",
+    "arcee-ai/trinity-large-preview:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1-0528:free"
   ],
   "max_tokens_base": 100,
   "max_tokens_scale_factor": 0.5,
