@@ -1,10 +1,10 @@
 """
-Multi-platform bot entry point v2.5.0
-Runs Telegram and WhatsApp bots simultaneously using shared core logic.
-Now with webhook support for WhatsApp on Railway.
+Multi-platform bot entry point v2.6.0
+Runs Telegram and WhatsApp bots simultaneously with webhook support for Railway.
 
 Usage:
-  python main.py              # Run bot normally
+  python main.py              # Run bot on Railway (webhook mode)
+  python main.py --polling    # Run locally with polling
   python main.py --diagnose   # Run diagnostics
 """
 import logging
@@ -12,6 +12,8 @@ import asyncio
 import sys
 import os
 from aiohttp import web
+from aiohttp.web_request import Request
+from aiohttp.web_response import Response
 
 # Setup logging
 logging.basicConfig(
@@ -26,66 +28,106 @@ logger = logging.getLogger(__name__)
 
 # Check environment
 IS_RAILWAY = os.environ.get('RAILWAY_ENVIRONMENT') is not None
-
-# Import adapters
-if IS_RAILWAY:
-    # On Railway - use full-featured bot with webhook support
-    from adapters.telegram_full import run_full_telegram_bot
-    from adapters.whatsapp_webhook import run_whatsapp_webhook_bot
-    TELEGRAM_RUNNER = run_full_telegram_bot
-    logger.info("Using FULL bot adapters with WhatsApp webhook (Railway mode)")
-else:
-    # Locally - use basic bot (or don't run at all)
-    from adapters.telegram_bot import run_telegram_bot
-    from adapters.whatsapp_bot import run_whatsapp_bot
-    TELEGRAM_RUNNER = run_telegram_bot
-    logger.info("Using BASIC bot adapters (Local mode)")
+USE_POLLING = len(sys.argv) > 1 and sys.argv[1] == '--polling'
 
 
 async def main():
-    """Main entry point - starts both bots with webhook support."""
-    logger.info("=" * 60)
-    logger.info("🚀 Starting Multi-Platform Bot v2.5.0")
-    logger.info("Platforms: Telegram + WhatsApp (with webhook)")
+    """Main entry point - starts both bots with webhook support on Railway."""
+    logger.info("=" * 70)
+    logger.info("🚀 Starting Multi-Platform Bot v2.6.0")
+    logger.info("Platforms: Telegram + WhatsApp (with webhooks)")
     logger.info(f"Environment: {'Railway' if IS_RAILWAY else 'Local'}")
-    logger.info("=" * 60)
+    logger.info(f"Mode: {'POLLING (local)' if USE_POLLING else 'WEBHOOK (production)'}")
+    logger.info("=" * 70)
 
     # Create aiohttp app for webhook support
     app = web.Application()
-
-    # Setup WhatsApp webhook if enabled
+    telegram_bot = None
     whatsapp_bot = None
-    if IS_RAILWAY:
-        whatsapp_bot = run_whatsapp_webhook_bot(app)
 
-    # Setup aiohttp server for webhooks
-    runner = web.AppRunner(app)
-    await runner.setup()
+    if IS_RAILWAY and not USE_POLLING:
+        # ===== RAILWAY MODE (webhook) =====
+        from adapters.telegram_full import FullTelegramBot
+        from adapters.whatsapp_webhook import WhatsAppWebhookBot
 
-    # Determine port (Railway provides PORT environment variable)
-    port = int(os.environ.get('PORT', 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
+        # Initialize Telegram bot
+        telegram_bot = FullTelegramBot()
+        
+        if telegram_bot and telegram_bot.enabled:
+            # Create webhook handler for Telegram
+            async def telegram_webhook_handler(request: Request) -> Response:
+                try:
+                    body = await request.json()
+                    update = types.Update(**body)
+                    await telegram_bot.dp.feed_update(telegram_bot.bot, update)
+                    return web.Response(status=200)
+                except Exception as e:
+                    logger.error(f"Telegram webhook error: {e}")
+                    return web.Response(status=500, text=f"Error: {e}")
+            
+            app.router.add_post('/webhook-telegram', telegram_webhook_handler)
+            logger.info("✅ Telegram webhook handler added: /webhook-telegram")
 
-    logger.info(f"Webhook server started on port {port}")
-    if IS_RAILWAY and whatsapp_bot:
-        logger.info("WhatsApp bot webhook is ready to receive messages")
-        logger.info(f"Webhook URL should be: https://{os.environ.get('RAILWAY_PUBLIC_DOMAIN')}/webhook-whatsapp")
+        # Initialize WhatsApp bot
+        whatsapp_bot = WhatsAppWebhookBot()
+        if whatsapp_bot and whatsapp_bot.enabled:
+            whatsapp_bot.setup_routes(app)
+            logger.info("✅ WhatsApp webhook handler added: /webhook-whatsapp")
 
-    # Start Telegram bot after server is running
-    telegram_task = asyncio.create_task(TELEGRAM_RUNNER())
+        # Setup aiohttp server
+        runner = web.AppRunner(app)
+        await runner.setup()
 
-    # Run all tasks
-    try:
-        await telegram_task
-    except KeyboardInterrupt:
-        logger.info("Shutdown requested by user")
-    except Exception as e:
-        logger.error(f"Main loop error: {e}")
-    finally:
-        await runner.cleanup()
+        # Get port from Railway
+        port = int(os.environ.get('PORT', 8080))
+        site = web.TCPSite(runner, '0.0.0.0', port)
+        await site.start()
 
-    logger.info("Bot stopped")
+        logger.info(f"🌐 Webhook server started on port {port}")
+
+        # Set webhooks
+        webhook_host = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
+        if webhook_host:
+            # Set Telegram webhook
+            if telegram_bot and telegram_bot.enabled:
+                telegram_webhook_url = f"https://{webhook_host}/webhook-telegram"
+                await telegram_bot.bot.set_webhook(telegram_webhook_url)
+                logger.info(f"✅ Telegram webhook SET: {telegram_webhook_url}")
+
+            logger.info(f"📱 WhatsApp webhook URL: https://{webhook_host}/webhook-whatsapp")
+            logger.info(f"🤖 Telegram webhook URL: https://{webhook_host}/webhook-telegram")
+        else:
+            logger.warning("⚠️  RAILWAY_PUBLIC_DOMAIN not set!")
+
+        # Keep server running
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            logger.info("Shutdown requested")
+        finally:
+            await runner.cleanup()
+            if telegram_bot:
+                try:
+                    await telegram_bot.bot.delete_webhook()
+                except:
+                    pass
+
+    else:
+        # ===== LOCAL MODE (polling) =====
+        from adapters.telegram_full import run_full_telegram_bot
+        from adapters.whatsapp_bot import run_whatsapp_bot
+        import threading
+
+        logger.info("🏃 Running in POLLING mode (for local development)")
+
+        # Run WhatsApp bot in separate thread
+        whatsapp_thread = threading.Thread(target=run_whatsapp_bot, daemon=True)
+        whatsapp_thread.start()
+        logger.info("✅ WhatsApp bot started (polling mode)")
+
+        # Run Telegram bot in main thread
+        await run_full_telegram_bot()
 
 
 if __name__ == "__main__":
@@ -93,23 +135,23 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == '--diagnose':
         print("🔍 Запуск диагностики...")
         import subprocess
-        subprocess.run([sys.executable, 'diagnose_whatsapp.py'])
+        subprocess.run([sys.executable, 'diagnose_whatsapp_webhook.py'])
         sys.exit(0)
 
     # Safety check - only run on Railway or explicitly allowed
-    if not IS_RAILWAY and os.environ.get('ALLOW_LOCAL_RUN') != 'true':
-        logger.warning("=" * 60)
+    if not IS_RAILWAY and not USE_POLLING and os.environ.get('ALLOW_LOCAL_RUN') != 'true':
+        logger.warning("=" * 70)
         logger.warning("⚠️  Bot is NOT running locally!")
         logger.warning("This bot is designed to run on Railway.")
-        logger.warning("To run locally, set ALLOW_LOCAL_RUN=true")
-        logger.warning("=" * 60)
+        logger.warning("To run locally, use: python main.py --polling")
+        logger.warning("=" * 70)
         print("\n[STOP] Bot stopped locally. Deploy to Railway to run.")
-        print("       Or set ALLOW_LOCAL_RUN=true to test locally.\n")
+        print("       Or use 'python main.py --polling' to test locally.\n")
         print("       To diagnose WhatsApp config: python main.py --diagnose")
         sys.exit(0)
 
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Goodbye!")
+        logger.info("👋 Goodbye!")
         sys.exit(0)

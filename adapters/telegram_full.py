@@ -1075,19 +1075,42 @@ class FullTelegramBot:
                 parse_mode=ParseMode.HTML
             )
     
-    async def run(self):
-        """Start Telegram bot polling."""
+    async def run(self, use_webhook: bool = False, webhook_path: str = "/webhook"):
+        """
+        Start Telegram bot.
+        
+        Args:
+            use_webhook: If True, use webhook mode (for Railway)
+            webhook_path: Webhook path (default: /webhook)
+        """
         if not self.enabled:
             logger.warning("Telegram bot is disabled (no token)")
             return
-        
+
         logger.info("Full Telegram bot started!")
-        
+
         # Start news scheduler in background
         scheduler_task = asyncio.create_task(self._run_scheduler())
-        
+
         try:
-            await self.dp.start_polling(self.bot)
+            if use_webhook:
+                # Webhook mode - for Railway production
+                from aiohttp import web
+                
+                # Get webhook URL from environment
+                webhook_host = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+                if webhook_host:
+                    webhook_url = f"https://{webhook_host}{webhook_path}"
+                    await self.bot.set_webhook(webhook_url)
+                    logger.info(f"Telegram webhook set: {webhook_url}")
+                else:
+                    logger.warning("RAILWAY_PUBLIC_DOMAIN not set, using polling fallback")
+                    await self.dp.start_polling(self.bot)
+            else:
+                # Polling mode - for local testing
+                await self.bot.delete_webhook()
+                logger.info("Telegram bot running in polling mode (local)")
+                await self.dp.start_polling(self.bot)
         finally:
             scheduler_task.cancel()
     
